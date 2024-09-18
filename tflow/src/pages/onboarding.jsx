@@ -16,12 +16,12 @@ function Onboarding() {
     setIsClicked(true);
 
     setTimeout(() => {
-      setView("home"); // Switch to the home view
+      setView("home");
     }, 500);
   };
 
   if (view === "home") {
-    return <Home />; // Render the Home component when onboarding is done
+    return <Home />;
   }
 
   return (

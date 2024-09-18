@@ -31,41 +31,39 @@ const Home = () => {
         </div>
         <XMarkIcon className="w-6 h-6 cursor-pointer" onClick={handleClose} />
       </div>
-      <div className="flex flex-col items-center w-full mt-8">
-        <div className="flex items-center justify-between p-5 w-full">
-          <h2 className="text-lg font-bold w-1/3">Tab Overview</h2>
-          <div className="flex flex-col w-1/2">
+      <div className="flex flex-col items-center justify-center space-y-7 w-full py-7">
+        <h2 className="text-lg font-bold w-1/3">Tab Overview</h2>
+        {/* <div className="flex flex-col w-[250px]">
             <div className="flex items-center">
               <WrenchIcon className="w-4 h-4" />
-              <h1 className="font-bold text-sm ml-2">Pro Tip</h1>
+              <h1 className="font-bold text-[13px] ml-2">DO YOU KNOW?</h1>
             </div>
-            <p className="text-xs mt-1">
-              Pin the extension for easy access to control
+            <p className="text-[10px] mt-1">
+              Managing your tabs reduces memory usage, boosts system
+              performance, and makes browsing faster and smoother!
             </p>
-          </div>
-        </div>
+          </div> */}
         <div className="h-px w-4/5 bg-gray-300"></div>
       </div>
-
-      <div className="flex justify-center">
-        <PieChart width={500} height={500}>
+      <div className="flex justify-center items-center m-[auto] px-4">
+        <PieChart width={300} height={300}>
           <Pie
             data={outerData}
             dataKey="value"
-            cx={250}
-            cy={250}
-            innerRadius={100}
-            outerRadius={150}
+            cx={150}
+            cy={150}
+            innerRadius={60}
+            outerRadius={90}
             fill="#FFA500"
             stroke="none"
           />
           <Pie
             data={innerData}
             dataKey="value"
-            cx={250}
-            cy={250}
+            cx={150}
+            cy={150}
             innerRadius={0}
-            outerRadius={90}
+            outerRadius={50}
             stroke="none"
           >
             {innerData.map((entry, index) => (
@@ -80,6 +78,20 @@ const Home = () => {
           </Pie>
           <Tooltip />
         </PieChart>
+        <div className=" flex flex-col justify-center  ">
+          <div className="flex items-center space-x-3">
+            <div className="w-[10px] h-[10px] rounded-full bg-[#FFA500]"></div>
+            <p>Total Tabs</p>
+          </div>
+          <div className="flex items-center space-x-3">
+            <div className="w-[10px] h-[10px] rounded-full bg-[#82ca9d]"></div>
+            <p>Inactive Tabs</p>
+          </div>
+          <div className="flex items-center space-x-3">
+            <div className="w-[10px] h-[10px] rounded-full bg-[#8884d8]"></div>
+            <p>Active Tabs</p>
+          </div>
+        </div>
       </div>
     </div>
   );
