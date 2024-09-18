@@ -1,4 +1,3 @@
-import { useNavigate } from "react-router-dom";
 import Logo from "/icon-48px.png";
 import {
   XMarkIcon,
@@ -6,19 +5,24 @@ import {
   WrenchIcon,
 } from "@heroicons/react/24/solid";
 import { useState } from "react";
-import "../App.css"; // Ensure this is correctly named
+import "../App.css";
+import Home from "./home";
 
 function Onboarding() {
-  const navigate = useNavigate();
   const [isClicked, setIsClicked] = useState(false);
+  const [view, setView] = useState("onboarding");
 
   const handleStart = () => {
     setIsClicked(true);
 
     setTimeout(() => {
-      navigate("/home");
+      setView("home"); // Switch to the home view
     }, 500);
   };
+
+  if (view === "home") {
+    return <Home />; // Render the Home component when onboarding is done
+  }
 
   return (
     <div className="w-full bg-secondary">

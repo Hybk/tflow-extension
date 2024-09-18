@@ -1,23 +1,16 @@
-import { useNavigate } from "react-router-dom";
 import Logo from "/icon-48px.png";
 import { XMarkIcon, WrenchIcon } from "@heroicons/react/24/solid";
 import { PieChart, Pie, Cell, Tooltip } from "recharts";
 import { useState } from "react";
 
-// Outer and inner chart data
 const outerData = [{ name: "Total", value: 100 }];
 const innerData = [
-  { name: "Property A", value: 60 },
-  { name: "Property B", value: 40 },
+  { name: "Active Tabs", value: 60 },
+  { name: "Inactive Tabs", value: 40 },
 ];
 
 const Home = () => {
-  const navigate = useNavigate();
   const [hoveredIndex, setHoveredIndex] = useState(null);
-
-  const goToSettings = () => {
-    navigate("/settings");
-  };
 
   const handleClose = () => {
     window.close();
@@ -31,19 +24,13 @@ const Home = () => {
 
   return (
     <div className="w-full bg-secondary">
-      {/* Header */}
-      <div
-        id="header"
-        className="flex justify-between bg-white h-16 px-6 items-center"
-      >
+      <div className="flex justify-between bg-white h-16 px-6 items-center">
         <div className="flex items-center space-x-3">
           <img src={Logo} alt="TabFlow Logo" className="w-6 h-6" />
           <h1 className="text-xl font-bold">TabFlow</h1>
         </div>
         <XMarkIcon className="w-6 h-6 cursor-pointer" onClick={handleClose} />
       </div>
-
-      {/* Tab Overview Section */}
       <div className="flex flex-col items-center w-full mt-8">
         <div className="flex items-center justify-between p-5 w-full">
           <h2 className="text-lg font-bold w-1/3">Tab Overview</h2>
@@ -60,10 +47,8 @@ const Home = () => {
         <div className="h-px w-4/5 bg-gray-300"></div>
       </div>
 
-      {/* PieChart with spacing and hover effect */}
       <div className="flex justify-center">
         <PieChart width={500} height={500}>
-          {/* Outer Doughnut Chart */}
           <Pie
             data={outerData}
             dataKey="value"
@@ -74,8 +59,6 @@ const Home = () => {
             fill="#FFA500"
             stroke="none"
           />
-
-          {/* Inner Pie Chart */}
           <Pie
             data={innerData}
             dataKey="value"
