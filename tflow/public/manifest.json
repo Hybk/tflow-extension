@@ -8,8 +8,10 @@
     "tabGroups",
     "storage",
     "notifications",
+    "sessions",
     "background"
   ],
+
   "icons": {
     "16": "icon-16px.png",
     "48": "icon-48px.png",

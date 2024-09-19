@@ -20,7 +20,7 @@ function App() {
   };
 
   return (
-    <div className="w-[450px] h-[660px] m-[auto] shadow-[0_10px_25px_rgba(0,0,0,0.15)] hover:shadow-[0_15px_35px_rgba(0,0,0,0.2)] transition-shadow duration-300 rounded-lg">
+    <div className="w-[450px] h-[auto] m-[auto] shadow-[0_10px_25px_rgba(0,0,0,0.15)] hover:shadow-[0_15px_35px_rgba(0,0,0,0.2)] transition-shadow duration-300 rounded-lg">
       {renderView()}
     </div>
   );

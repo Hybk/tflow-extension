@@ -81,7 +81,7 @@ function Onboarding() {
           </button>
         </div>
       </div>
-      <footer className="flex justify-between items-center px-3 bg-white">
+      <footer className="flex justify-between items-center p-3 bg-white">
         <div className="flex items-center space-x-1">
           <WrenchIcon className="w-4 h-4" />
           <p className="text-xs font-semibold">
