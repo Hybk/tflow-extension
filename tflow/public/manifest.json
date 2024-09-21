@@ -11,6 +11,9 @@
     "sessions",
     "background"
   ],
+  "background": {
+    "service_workers": "background.js"
+  },
 
   "icons": {
     "16": "icon-16px.png",
