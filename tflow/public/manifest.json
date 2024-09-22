@@ -3,18 +3,10 @@
   "name": "TabFlow",
   "version": "1.0",
   "description": "A powerful Chrome extension to manage and organize browser tabs efficiently.",
-  "permissions": [
-    "tabs",
-    "tabGroups",
-    "storage",
-    "notifications",
-    "sessions",
-    "background"
-  ],
+  "permissions": ["tabs", "tabGroups", "storage", "notifications", "sessions"],
   "background": {
-    "service_workers": "background.js"
+    "service_worker": "background.bundle.js"
   },
-
   "icons": {
     "16": "icon-16px.png",
     "48": "icon-48px.png",
