@@ -31,5 +31,5 @@
 
 1. Clone the repo:
    ```bash
-   git clone https://github.com/Hybk/TFlow-Extention.git
+   git clone https://github.com/Hybk/tflow-extention.git
    ```
