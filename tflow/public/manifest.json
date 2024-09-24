@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TabFlow",
-  "version": "1.0",
+  "version": "1.0.0",
   "description": "A powerful Chrome extension to manage and organize browser tabs efficiently.",
   "permissions": [
     "tabs",

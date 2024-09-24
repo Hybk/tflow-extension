@@ -32,17 +32,40 @@ function isTabInactive(tabId) {
 function setupTabListeners() {
   chrome.tabs.onActivated.addListener(({ tabId }) => {
     updateLastInteractionTime(tabId);
+    handleTabActivation(tabId);
   });
 
   chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     if (changeInfo.status === "complete") {
       updateLastInteractionTime(tabId);
+      handleTabActivation(tabId);
     }
   });
 
   chrome.tabs.onCreated.addListener((tab) => {
     tabCreationTime[tab.id] = Date.now();
     updateLastInteractionTime(tab.id);
+  });
+}
+
+// Function to remove a tab from the inactive group when it's activated
+function handleTabActivation(tabId) {
+  if (inactiveGroupId === null) return; // No inactive group exists
+  chrome.tabs.get(tabId, (tab) => {
+    if (tab.groupId === inactiveGroupId) {
+      // If the tab is part of the inactive group, ungroup it
+      chrome.tabs.ungroup(tabId, () => {
+        if (chrome.runtime.lastError) {
+          console.error("Error ungrouping tab:", chrome.runtime.lastError);
+        }
+        // Collapse the group again after the tab is removed
+        chrome.tabGroups.update(inactiveGroupId, { collapsed: true }, () => {
+          if (chrome.runtime.lastError) {
+            console.error("Error collapsing group:", chrome.runtime.lastError);
+          }
+        });
+      });
+    }
   });
 }
 
