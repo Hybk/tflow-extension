@@ -4,7 +4,7 @@ const INACTIVITY_THRESHOLD = 2 * 60 * 1000; // 2 minutes in milliseconds
 const CHECK_INTERVAL = 30 * 1000; // Check every 30 seconds
 
 let tabLastInteractionTime = {};
-let inactiveGroupId = null;
+let tabCreationTime = {};
 
 function updateLastInteractionTime(tabId) {
   tabLastInteractionTime[tabId] = Date.now();
@@ -12,108 +12,84 @@ function updateLastInteractionTime(tabId) {
 
 function isTabInactive(tabId) {
   const lastInteraction = tabLastInteractionTime[tabId] || 0;
-  return Date.now() - lastInteraction > INACTIVITY_THRESHOLD;
+  const creationTime = tabCreationTime[tabId] || 0;
+  const currentTime = Date.now();
+
+  // Check if the tab has been interacted with in the last 2 minutes
+  if (currentTime - lastInteraction <= INACTIVITY_THRESHOLD) {
+    return false;
+  }
+
+  // Check if the tab was created within the last 2 minutes
+  if (currentTime - creationTime <= INACTIVITY_THRESHOLD) {
+    return false;
+  }
+
+  return true;
 }
 
-function injectContentScript(tabId) {
-  chrome.tabs.executeScript(tabId, {
-    code: `
-      if (!window.interactionListenerAdded) {
-        window.interactionListenerAdded = true;
-        document.addEventListener('mousemove', () => {
-          chrome.runtime.sendMessage({action: 'interaction', tabId: ${tabId}});
-        });
-        document.addEventListener('keydown', () => {
-          chrome.runtime.sendMessage({action: 'interaction', tabId: ${tabId}});
-        });
-      }
-    `,
-  });
-}
-
-function setupListeners() {
-  chrome.tabs.query({}, (tabs) => {
-    tabs.forEach((tab) => injectContentScript(tab.id));
+function setupTabListeners() {
+  chrome.tabs.onActivated.addListener(({ tabId }) => {
+    updateLastInteractionTime(tabId);
   });
 
   chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     if (changeInfo.status === "complete") {
-      injectContentScript(tabId);
+      updateLastInteractionTime(tabId);
     }
   });
 
-  chrome.runtime.onMessage.addListener((message) => {
-    if (message.action === "interaction") {
-      updateLastInteractionTime(message.tabId);
-      removeTabFromInactiveGroup(message.tabId);
-    }
+  chrome.tabs.onCreated.addListener((tab) => {
+    tabCreationTime[tab.id] = Date.now();
+    updateLastInteractionTime(tab.id);
   });
 }
 
-function removeTabFromInactiveGroup(tabId) {
-  if (inactiveGroupId !== null) {
-    chrome.tabs.ungroup(tabId, () => {
-      if (chrome.runtime.lastError) {
-        console.error("Error ungrouping tab:", chrome.runtime.lastError);
-      }
-    });
-  }
-}
+function groupInactiveTabs() {
+  chrome.tabs.query({ currentWindow: true }, (tabs) => {
+    const activeTab = tabs.find((tab) => tab.active);
+    if (!activeTab) {
+      console.error("No active tab found");
+      return;
+    }
 
-function manageInactiveTabs() {
-  chrome.tabs.query({}, (tabs) => {
-    const inactiveTabs = tabs.filter((tab) => isTabInactive(tab.id));
-    const activeTabs = tabs.filter((tab) => !isTabInactive(tab.id));
+    updateLastInteractionTime(activeTab.id); // Ensure active tab is marked as interacted
 
-    // Ungroup active tabs
-    activeTabs.forEach((tab) => removeTabFromInactiveGroup(tab.id));
+    const tabsToGroup = tabs.filter(
+      (tab) => tab.id !== activeTab.id && isTabInactive(tab.id)
+    );
 
-    if (inactiveTabs.length === 0) {
+    if (tabsToGroup.length === 0) {
       console.log("No inactive tabs to group");
       return;
     }
 
-    const tabIdsToGroup = inactiveTabs.map((tab) => tab.id);
+    const tabIdsToGroup = tabsToGroup.map((tab) => tab.id);
 
-    if (inactiveGroupId === null) {
-      // Create a new group if it doesn't exist
-      chrome.tabs.group({ tabIds: tabIdsToGroup }, (groupId) => {
-        if (chrome.runtime.lastError) {
-          console.error("Error creating group:", chrome.runtime.lastError);
-          return;
-        }
-        inactiveGroupId = groupId;
-        updateGroupProperties(groupId);
-      });
-    } else {
-      chrome.tabs.group(
-        { tabIds: tabIdsToGroup, groupId: inactiveGroupId },
+    // Group the inactive tabs
+    chrome.tabs.group({ tabIds: tabIdsToGroup }, (groupId) => {
+      if (chrome.runtime.lastError) {
+        console.error("Error creating group:", chrome.runtime.lastError);
+        return;
+      }
+
+      // Update group properties
+      chrome.tabGroups.update(
+        groupId,
+        {
+          title: "Inactive Tabs",
+          collapsed: true,
+        },
         () => {
           if (chrome.runtime.lastError) {
-            console.error("Error adding to group:", chrome.runtime.lastError);
-            return;
+            console.error("Error updating group:", chrome.runtime.lastError);
           }
-          updateGroupProperties(inactiveGroupId);
         }
       );
-    }
+    });
   });
 }
 
-function updateGroupProperties(groupId) {
-  chrome.tabGroups.update(
-    groupId,
-    {
-      title: "Inactive Tabs",
-      collapsed: true,
-    },
-    () => {
-      if (chrome.runtime.lastError) {
-        console.error("Error updating group:", chrome.runtime.lastError);
-      }
-    }
-  );
-}
-
-setupListeners();
-setInterval(manageInactiveTabs, CHECK_INTERVAL);
+// Setup listeners and start the grouping process
+setupTabListeners();
+setInterval(groupInactiveTabs, CHECK_INTERVAL);

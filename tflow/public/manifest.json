@@ -10,7 +10,7 @@
     "storage",
     "notifications",
     "sessions",
-    "<all_urls>"
+    "idle"
   ],
   "background": {
     "service_worker": "background.bundle.js"
