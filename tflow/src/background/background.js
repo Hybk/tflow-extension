@@ -5,6 +5,7 @@ const CHECK_INTERVAL = 30 * 1000; // Check every 30 seconds
 
 let tabLastInteractionTime = {};
 let tabCreationTime = {};
+let inactiveGroupId = null; // To store the ID of the inactive tabs group
 
 function updateLastInteractionTime(tabId) {
   tabLastInteractionTime[tabId] = Date.now();
@@ -66,27 +67,45 @@ function groupInactiveTabs() {
 
     const tabIdsToGroup = tabsToGroup.map((tab) => tab.id);
 
-    // Group the inactive tabs
-    chrome.tabs.group({ tabIds: tabIdsToGroup }, (groupId) => {
-      if (chrome.runtime.lastError) {
-        console.error("Error creating group:", chrome.runtime.lastError);
-        return;
-      }
-
-      // Update group properties
-      chrome.tabGroups.update(
-        groupId,
-        {
-          title: "Inactive Tabs",
-          collapsed: true,
-        },
+    if (inactiveGroupId !== null) {
+      // If the group already exists, just move the tabs into the existing group
+      chrome.tabs.group(
+        { groupId: inactiveGroupId, tabIds: tabIdsToGroup },
         () => {
           if (chrome.runtime.lastError) {
-            console.error("Error updating group:", chrome.runtime.lastError);
+            console.error(
+              "Error adding tabs to existing group:",
+              chrome.runtime.lastError
+            );
           }
         }
       );
-    });
+    } else {
+      // Create a new group and store its ID
+      chrome.tabs.group({ tabIds: tabIdsToGroup }, (groupId) => {
+        if (chrome.runtime.lastError) {
+          console.error("Error creating group:", chrome.runtime.lastError);
+          return;
+        }
+
+        // Save the group ID so no other group is created
+        inactiveGroupId = groupId;
+
+        // Update group properties
+        chrome.tabGroups.update(
+          groupId,
+          {
+            title: "Inactive Tabs",
+            collapsed: true,
+          },
+          () => {
+            if (chrome.runtime.lastError) {
+              console.error("Error updating group:", chrome.runtime.lastError);
+            }
+          }
+        );
+      });
+    }
   });
 }
 
