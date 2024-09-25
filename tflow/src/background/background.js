@@ -7,10 +7,12 @@ let tabLastInteractionTime = {};
 let tabCreationTime = {};
 let inactiveGroupId = null; // To store the ID of the inactive tabs group
 
+// Update the last interaction time for the active tab
 function updateLastInteractionTime(tabId) {
   tabLastInteractionTime[tabId] = Date.now();
 }
 
+// Check if a tab is inactive for longer than the defined threshold
 function isTabInactive(tabId) {
   const lastInteraction = tabLastInteractionTime[tabId] || 0;
   const creationTime = tabCreationTime[tabId] || 0;
@@ -23,8 +25,8 @@ function isTabInactive(tabId) {
   );
 }
 
+// Group inactive tabs into one tab group
 async function groupTabs(tabIds) {
-  // Group inactive tabs and store the group ID
   const groupId = await chrome.tabs.group({ tabIds });
   await chrome.tabGroups.update(groupId, {
     title: "Inactive Tabs",
@@ -36,62 +38,53 @@ async function groupTabs(tabIds) {
   inactiveGroupId = groupId;
 }
 
+// Ungroup tabs that have become active again or opened
 async function ungroupTabs(tabIds) {
   await chrome.tabs.ungroup(tabIds);
 }
 
-async function groupUngroupTabs(tabs) {
-  const tabIds = tabs.map(({ id }) => id);
-
-  if (!tabIds.length) {
-    return;
+// Check and ungroup a tab if it's part of the inactive group
+async function checkAndUngroupTab(tabId) {
+  const tab = await chrome.tabs.get(tabId);
+  if (tab.groupId === inactiveGroupId) {
+    await ungroupTabs([tabId]);
   }
-
-  const groupIds = tabs.map(({ groupId }) => groupId);
-  if (
-    groupIds.length === 1 &&
-    groupIds[0] === chrome.tabGroups.TAB_GROUP_ID_NONE
-  ) {
-    await groupTabs(tabIds);
-    return;
-  }
-
-  for (let i = 0; i < groupIds.length - 1; i++) {
-    if (
-      groupIds[i] === chrome.tabGroups.TAB_GROUP_ID_NONE ||
-      groupIds[i] !== groupIds[i + 1]
-    ) {
-      await groupTabs(tabIds);
-      return;
-    }
-  }
-
-  await ungroupTabs(tabIds);
 }
 
+// Set up tab listeners to track tab activity
 function setupTabListeners() {
-  chrome.tabs.onActivated.addListener(({ tabId }) => {
+  // When a tab is activated (switched to), update the interaction time and ungroup if necessary
+  chrome.tabs.onActivated.addListener(async ({ tabId }) => {
     updateLastInteractionTime(tabId);
+
+    // Check if the tab is in the inactive group and ungroup it
+    await checkAndUngroupTab(tabId);
   });
 
+  // When a tab is updated (e.g., URL changed or finished loading), update the interaction time
   chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     if (changeInfo.status === "complete") {
       updateLastInteractionTime(tabId);
+
+      // Check if the tab is in the inactive group and ungroup it
+      checkAndUngroupTab(tabId);
     }
   });
 
+  // When a new tab is created, set its creation and interaction time
   chrome.tabs.onCreated.addListener((tab) => {
     tabCreationTime[tab.id] = Date.now();
     updateLastInteractionTime(tab.id);
   });
 
-  // Remove tab data on removal
+  // Remove tab data when a tab is closed
   chrome.tabs.onRemoved.addListener((tabId) => {
     delete tabLastInteractionTime[tabId];
     delete tabCreationTime[tabId];
   });
 }
 
+// Function to group inactive tabs after the inactivity threshold is reached
 function groupInactiveTabs() {
   chrome.tabs.query({ currentWindow: true }, async (tabs) => {
     const activeTab = tabs.find((tab) => tab.active);
@@ -100,8 +93,10 @@ function groupInactiveTabs() {
       return;
     }
 
+    // Update the interaction time of the active tab
     updateLastInteractionTime(activeTab.id);
 
+    // Filter inactive tabs (excluding the active tab)
     const inactiveTabs = tabs.filter(
       (tab) => tab.id !== activeTab.id && isTabInactive(tab.id)
     );
@@ -126,50 +121,6 @@ function groupInactiveTabs() {
   });
 }
 
-// Setup listeners and start checking every 30 seconds for inactive tabs
+// Setup listeners and check for inactive tabs at regular intervals
 setupTabListeners();
 setInterval(groupInactiveTabs, CHECK_INTERVAL);
-
-async function getTabs(urls) {
-  const tabs = await chrome.tabs.query({ url: urls });
-
-  const collator = new Intl.Collator();
-  tabs.sort((a, b) => collator.compare(a.title, b.title));
-  return tabs;
-}
-
-async function setUpHTML(urls) {
-  const tabs = await getTabs(urls);
-  const template = document.getElementById("li_template");
-  const elements = new Set();
-
-  for (const tab of tabs) {
-    const element = template.content.firstElementChild.cloneNode(true);
-
-    const title = tab.title.split("-")[0].trim();
-    const pathname = new URL(tab.url).pathname.slice("/docs".length);
-
-    element.querySelector(".title").textContent = title;
-    element.querySelector(".pathname").textContent = pathname;
-    element.querySelector("a").addEventListener("click", async () => {
-      await chrome.tabs.update(tab.id, { active: true });
-      await chrome.windows.update(tab.windowId, { focused: true });
-    });
-
-    elements.add(element);
-  }
-
-  document.querySelector("ul").append(...elements);
-
-  const button = document.querySelector("button");
-  button.addEventListener("click", () => groupUngroupTabs(tabs));
-}
-
-const urls = [
-  "https://developer.chrome.com/docs/webstore/*",
-  "https://developer.chrome.com/docs/extensions/*",
-  // "https://*/*",
-  // "http://*/*",
-];
-
-setUpHTML(urls);
