@@ -41,6 +41,11 @@ async function groupTabs(tabIds) {
 // Ungroup tabs that have become active again or opened
 async function ungroupTabs(tabIds) {
   await chrome.tabs.ungroup(tabIds);
+
+  // Collapse the remaining tabs in the inactive group
+  if (inactiveGroupId) {
+    await chrome.tabGroups.update(inactiveGroupId, { collapsed: true });
+  }
 }
 
 // Check and ungroup a tab if it's part of the inactive group
