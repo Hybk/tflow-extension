@@ -1,6 +1,6 @@
 /* global chrome */
 
-console.log("Tab Group Manager extension is starting");
+console.log("TabFlow, Tab Manager extension is starting");
 
 const INACTIVITY_THRESHOLD = 2 * 60 * 1000;
 const CHECK_INTERVAL = 30 * 1000;
