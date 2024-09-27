@@ -10,6 +10,35 @@ const tabCreationTime = new Map();
 let inactiveGroupId = null;
 let initialDelay = true;
 
+async function saveState() {
+  const state = {
+    inactiveGroupId,
+    tabCreationTime: [...tabCreationTime.entries()],
+    tabLastInteractionTime: [...tabLastInteractionTime.entries()],
+  };
+  await chrome.storage.local.set({ tabFlowState: state });
+  console.log("Saved state:", state);
+}
+
+async function restoreState() {
+  const result = await chrome.storage.local.get("tabFlowState");
+  const state = result.tabFlowState || {};
+  inactiveGroupId = state.inactiveGroupId || null;
+
+  // Restore Maps
+  tabCreationTime.clear();
+  tabLastInteractionTime.clear();
+
+  (state.tabCreationTime || []).forEach(([key, value]) =>
+    tabCreationTime.set(key, value)
+  );
+  (state.tabLastInteractionTime || []).forEach(([key, value]) =>
+    tabLastInteractionTime.set(key, value)
+  );
+
+  console.log("Restored state:", state);
+}
+
 function updateLastInteractionTime(tabId) {
   tabLastInteractionTime.set(tabId, Date.now());
   console.log(`Updated last interaction time for tab ${tabId}`);
@@ -43,6 +72,7 @@ async function groupTabs(tabIds) {
 
     inactiveGroupId = groupId;
     console.log(`Set inactiveGroupId to ${inactiveGroupId}`);
+    await saveState(); // Save the group ID and state
   } catch (error) {
     console.error("Error grouping tabs:", error);
   }
@@ -64,6 +94,7 @@ async function ungroupTabs(tabIds) {
         inactiveGroupId = null;
         console.log(`Reset inactiveGroupId to null`);
       }
+      await saveState(); // Save the updated state
     }
   } catch (error) {
     console.error("Error ungrouping tabs:", error);
@@ -112,6 +143,7 @@ function setupTabListeners() {
     console.log(`Tab ${tabId} removed`);
     tabLastInteractionTime.delete(tabId);
     tabCreationTime.delete(tabId);
+    saveState(); // Save state when tabs are removed
   });
 }
 
@@ -167,7 +199,7 @@ async function groupInactiveTabs() {
 function checkPermissions() {
   chrome.permissions.contains(
     {
-      permissions: ["tabs", "tabGroups"],
+      permissions: ["tabs", "tabGroups", "storage"],
     },
     (result) => {
       if (result) {
@@ -179,13 +211,23 @@ function checkPermissions() {
   );
 }
 
+async function handleWindowClose() {
+  console.log("Window closing, saving state");
+  await saveState(); // Persist state when window closes
+}
+
 function init() {
-  setupTabListeners();
-  checkPermissions();
-  console.log(
-    `Setting up interval to check every ${CHECK_INTERVAL / 1000} seconds`
-  );
-  setInterval(groupInactiveTabs, CHECK_INTERVAL);
+  restoreState().then(() => {
+    setupTabListeners();
+    checkPermissions();
+    console.log(
+      `Setting up interval to check every ${CHECK_INTERVAL / 1000} seconds`
+    );
+    setInterval(groupInactiveTabs, CHECK_INTERVAL);
+
+    // Listen for window close event and handle accordingly
+    chrome.windows.onRemoved.addListener(handleWindowClose);
+  });
 }
 
 init();
