@@ -30,10 +30,10 @@ async function restoreState() {
   tabLastInteractionTime.clear();
 
   (state.tabCreationTime || []).forEach(([key, value]) =>
-    tabCreationTime.set(key, value)
+    tabCreationTime.set(parseInt(key), value)
   );
   (state.tabLastInteractionTime || []).forEach(([key, value]) =>
-    tabLastInteractionTime.set(key, value)
+    tabLastInteractionTime.set(parseInt(key), value)
   );
 
   console.log("Restored state:", state);
@@ -57,22 +57,50 @@ function isTabInactive(tabId) {
   return isInactive;
 }
 
-async function groupTabs(tabIds) {
-  if (tabIds.length === 0) return;
+async function findOrCreateInactiveGroup(tabIds) {
+  console.log("Searching for existing 'Inactive Tabs' group");
+  const groups = await chrome.tabGroups.query({ title: "Inactive Tabs" });
 
-  console.log(`Attempting to group tabs: ${tabIds.join(", ")}`);
-  try {
+  if (groups.length > 0) {
+    inactiveGroupId = groups[0].id;
+    console.log(
+      `Found existing 'Inactive Tabs' group with ID: ${inactiveGroupId}`
+    );
+    return inactiveGroupId;
+  }
+
+  if (tabIds && tabIds.length > 0) {
+    console.log("'Inactive Tabs' group not found, creating a new one");
     const groupId = await chrome.tabs.group({ tabIds });
-    console.log(`Created group with ID: ${groupId}`);
     await chrome.tabGroups.update(groupId, {
       title: "Inactive Tabs",
       collapsed: true,
       color: "cyan",
     });
-
     inactiveGroupId = groupId;
-    console.log(`Set inactiveGroupId to ${inactiveGroupId}`);
-    await saveState(); // Save the group ID and state
+    console.log(
+      `Created new 'Inactive Tabs' group with ID: ${inactiveGroupId}`
+    );
+    return inactiveGroupId;
+  }
+
+  console.log("No tabs to group, 'Inactive Tabs' group not created");
+  return null;
+}
+
+async function groupTabs(tabIds) {
+  if (tabIds.length === 0) return;
+
+  console.log(`Attempting to group tabs: ${tabIds.join(", ")}`);
+  try {
+    const groupId = await findOrCreateInactiveGroup(tabIds);
+    if (groupId) {
+      await chrome.tabs.group({ groupId, tabIds });
+      console.log(`Added tabs to 'Inactive Tabs' group with ID: ${groupId}`);
+    } else {
+      console.log("No group created, tabs not grouped");
+    }
+    await saveState();
   } catch (error) {
     console.error("Error grouping tabs:", error);
   }
@@ -91,10 +119,13 @@ async function ungroupTabs(tabIds) {
         await chrome.tabGroups.update(inactiveGroupId, { collapsed: true });
         console.log(`Collapsed inactive group`);
       } else {
+        await chrome.tabGroups.remove(inactiveGroupId);
         inactiveGroupId = null;
-        console.log(`Reset inactiveGroupId to null`);
+        console.log(
+          `Removed empty inactive group and reset inactiveGroupId to null`
+        );
       }
-      await saveState(); // Save the updated state
+      await saveState();
     }
   } catch (error) {
     console.error("Error ungrouping tabs:", error);
@@ -105,9 +136,6 @@ async function checkAndUngroupTab(tabId) {
   console.log(`Checking if tab ${tabId} needs to be ungrouped`);
   try {
     const tab = await chrome.tabs.get(tabId);
-    console.log(
-      `Tab ${tabId} group: ${tab.groupId}, inactiveGroupId: ${inactiveGroupId}`
-    );
     if (tab.groupId === inactiveGroupId) {
       console.log(`Ungrouping tab ${tabId}`);
       await ungroupTabs([tabId]);
@@ -143,7 +171,7 @@ function setupTabListeners() {
     console.log(`Tab ${tabId} removed`);
     tabLastInteractionTime.delete(tabId);
     tabCreationTime.delete(tabId);
-    saveState(); // Save state when tabs are removed
+    saveState();
   });
 }
 
@@ -181,16 +209,7 @@ async function groupInactiveTabs() {
     const tabIdsToGroup = inactiveTabs.map((tab) => tab.id);
     console.log(`Tabs to group: ${tabIdsToGroup.join(", ")}`);
 
-    if (inactiveGroupId) {
-      console.log(`Adding tabs to existing group ${inactiveGroupId}`);
-      await chrome.tabs.group({
-        groupId: inactiveGroupId,
-        tabIds: tabIdsToGroup,
-      });
-    } else {
-      console.log("Creating new group for inactive tabs");
-      await groupTabs(tabIdsToGroup);
-    }
+    await groupTabs(tabIdsToGroup);
   } catch (error) {
     console.error("Error in groupInactiveTabs:", error);
   }
@@ -211,13 +230,19 @@ function checkPermissions() {
   );
 }
 
-async function handleWindowClose() {
-  console.log("Window closing, saving state");
-  await saveState(); // Persist state when window closes
+async function handleWindowClose(windowId) {
+  console.log(`Window ${windowId} closing, saving state`);
+  await saveState();
+}
+
+async function handleWindowOpen(window) {
+  console.log(`Window ${window.id} opened, restoring state`);
+  await restoreState();
+  await groupInactiveTabs();
 }
 
 function init() {
-  restoreState().then(() => {
+  restoreState().then(async () => {
     setupTabListeners();
     checkPermissions();
     console.log(
@@ -225,17 +250,17 @@ function init() {
     );
     setInterval(groupInactiveTabs, CHECK_INTERVAL);
 
-    // Listen for window close event and handle accordingly
     chrome.windows.onRemoved.addListener(handleWindowClose);
+    chrome.windows.onCreated.addListener(handleWindowOpen);
   });
 }
 
 init();
 
-chrome.action.onClicked.addListener(() => {
-  console.log("Extension icon clicked. Attempting to group all tabs.");
-  chrome.tabs.query({ currentWindow: true }, (tabs) => {
-    const tabIds = tabs.map((t) => t.id);
-    groupTabs(tabIds);
-  });
-});
+// chrome.action.onClicked.addListener(() => {
+//   console.log("Extension icon clicked. Attempting to group all tabs.");
+//   chrome.tabs.query({ currentWindow: true }, (tabs) => {
+//     const tabIds = tabs.map((t) => t.id);
+//     groupTabs(tabIds);
+//   });
+// });

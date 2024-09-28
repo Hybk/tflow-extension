@@ -7,11 +7,11 @@ export default defineConfig({
     outDir: "dist",
     rollupOptions: {
       input: {
-        popup: "index.html", // Main popup HTML file
-        background: "src/background/background.js", // Path to the background script
+        popup: "index.html",
+        background: "src/background/background.js",
       },
       output: {
-        entryFileNames: "[name].bundle.js", // Name the output files
+        entryFileNames: "[name].bundle.js",
       },
     },
   },
