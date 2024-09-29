@@ -4,15 +4,18 @@ console.log("TabFlow, Tab Manager extension is starting");
 
 const INACTIVITY_THRESHOLD = 2 * 60 * 1000;
 const CHECK_INTERVAL = 30 * 1000;
+const DELETE_INACTIVE_GROUP_INTERVAL = 30 * 60 * 1000; // 30 minutes
 
 const tabLastInteractionTime = new Map();
 const tabCreationTime = new Map();
 let inactiveGroupId = null;
 let initialDelay = true;
+let inactiveGroupCreationTime = null;
 
 async function saveState() {
   const state = {
     inactiveGroupId,
+    inactiveGroupCreationTime,
     tabCreationTime: [...tabCreationTime.entries()],
     tabLastInteractionTime: [...tabLastInteractionTime.entries()],
   };
@@ -24,6 +27,7 @@ async function restoreState() {
   const result = await chrome.storage.local.get("tabFlowState");
   const state = result.tabFlowState || {};
   inactiveGroupId = state.inactiveGroupId || null;
+  inactiveGroupCreationTime = state.inactiveGroupCreationTime || null;
 
   // Restore Maps
   tabCreationTime.clear();
@@ -78,6 +82,7 @@ async function findOrCreateInactiveGroup(tabIds) {
       color: "cyan",
     });
     inactiveGroupId = groupId;
+    inactiveGroupCreationTime = Date.now();
     console.log(
       `Created new 'Inactive Tabs' group with ID: ${inactiveGroupId}`
     );
@@ -121,6 +126,7 @@ async function ungroupTabs(tabIds) {
       } else {
         await chrome.tabGroups.remove(inactiveGroupId);
         inactiveGroupId = null;
+        inactiveGroupCreationTime = null;
         console.log(
           `Removed empty inactive group and reset inactiveGroupId to null`
         );
@@ -241,6 +247,39 @@ async function handleWindowOpen(window) {
   await groupInactiveTabs();
 }
 
+async function deleteInactiveGroupIfExpired() {
+  console.log("Checking if inactive group should be deleted");
+  if (inactiveGroupId && inactiveGroupCreationTime) {
+    const currentTime = Date.now();
+    if (
+      currentTime - inactiveGroupCreationTime >=
+      DELETE_INACTIVE_GROUP_INTERVAL
+    ) {
+      console.log("Inactive group has expired. Deleting it and its tabs.");
+      try {
+        const groupTabs = await chrome.tabs.query({ groupId: inactiveGroupId });
+        const tabIds = groupTabs.map((tab) => tab.id);
+
+        await Promise.all([
+          chrome.tabs.remove(tabIds),
+          chrome.tabGroups.remove(inactiveGroupId),
+        ]);
+
+        inactiveGroupId = null;
+        inactiveGroupCreationTime = null;
+        console.log("Inactive group and its tabs deleted successfully");
+        await saveState();
+      } catch (error) {
+        console.error("Error deleting inactive group and its tabs:", error);
+      }
+    } else {
+      console.log("Inactive group has not expired yet");
+    }
+  } else {
+    console.log("No inactive group to delete");
+  }
+}
+
 function init() {
   restoreState().then(async () => {
     setupTabListeners();
@@ -249,6 +288,13 @@ function init() {
       `Setting up interval to check every ${CHECK_INTERVAL / 1000} seconds`
     );
     setInterval(groupInactiveTabs, CHECK_INTERVAL);
+
+    console.log(
+      `Setting up interval to delete inactive group every ${
+        DELETE_INACTIVE_GROUP_INTERVAL / 60000
+      } minutes`
+    );
+    setInterval(deleteInactiveGroupIfExpired, DELETE_INACTIVE_GROUP_INTERVAL);
 
     chrome.windows.onRemoved.addListener(handleWindowClose);
     chrome.windows.onCreated.addListener(handleWindowOpen);
