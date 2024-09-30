@@ -1,15 +1,36 @@
+/* global chrome */
+
+import { useState, useEffect } from "react";
 import Logo from "/icon-48px.png";
 import { XMarkIcon } from "@heroicons/react/24/solid";
-import { useState } from "react";
 
-const handleClose = () => {
-  window.close();
-};
+const Setting = () => {
+  const [action, setAction] = useState("group");
+  const [inactiveTime, setInactiveTime] = useState(60);
+  const [groupTime, setGroupTime] = useState(180);
 
-function Setting() {
-  const [action, setAction] = useState("group"); // default to grouping
-  const [inactiveTime, setInactiveTime] = useState(60); // default: 60 mins
-  const [groupTime, setGroupTime] = useState(180); // default: 180 mins
+  useEffect(() => {
+    chrome.storage.local.get(
+      ["action", "inactiveTime", "groupTime"],
+      (result) => {
+        if (result.action) setAction(result.action);
+        if (result.inactiveTime) setInactiveTime(result.inactiveTime);
+        if (result.groupTime) setGroupTime(result.groupTime);
+      }
+    );
+  }, []);
+
+  useEffect(() => {
+    chrome.storage.local.set({ action, inactiveTime, groupTime });
+    chrome.runtime.sendMessage({
+      type: "updateSettings",
+      settings: { action, inactiveTime, groupTime },
+    });
+  }, [action, inactiveTime, groupTime]);
+
+  const handleClose = () => {
+    window.close();
+  };
 
   return (
     <div className="w-full h-[auto] bg-secondary">
@@ -24,10 +45,8 @@ function Setting() {
         <h2 className="text-lg font-bold w-1/3 text-center">Tab Settings</h2>
         <div className="h-px w-4/5 bg-gray-300"></div>
       </div>
-      <div>
-        <p>Inactive Threshold </p>
-
-        {/* Inactive Time Slider */}
+      <div className="p-5">
+        <p>Inactive Threshold</p>
         <div className="mb-5">
           <label htmlFor="inactiveSlider" className="font-bold">
             Inactive Tab Timeout (minutes): {inactiveTime}
@@ -38,19 +57,16 @@ function Setting() {
             min="5"
             max="120"
             value={inactiveTime}
-            onChange={(e) => setInactiveTime(e.target.value)}
+            onChange={(e) => setInactiveTime(Number(e.target.value))}
             className="w-full"
           />
         </div>
       </div>
       <div className="p-5">
-        {/* Option for Tab Management */}
         <div className="mb-5">
           <p className="font-bold mb-3">
             Choose what happens when a tab is inactive:
           </p>
-
-          {/* Option 1: Group tabs */}
           <div className="flex flex-col mb-2">
             <div className="flex">
               <input
@@ -66,11 +82,8 @@ function Setting() {
                 Group inactive tabs
               </label>
             </div>
-
-            {/* Show range sliders only if "Group inactive tabs" is selected */}
             {action === "group" && (
               <div>
-                {/* Grouped Tab Stay Time Slider */}
                 <div className="mb-5">
                   <label htmlFor="groupSlider" className="font-bold">
                     Grouped Tab Stay Time (minutes): {groupTime}
@@ -81,15 +94,13 @@ function Setting() {
                     min="60"
                     max="240"
                     value={groupTime}
-                    onChange={(e) => setGroupTime(e.target.value)}
+                    onChange={(e) => setGroupTime(Number(e.target.value))}
                     className="w-full"
                   />
                 </div>
               </div>
             )}
           </div>
-
-          {/* Option 2: Delete tabs */}
           <div className="flex items-center mb-5">
             <input
               type="radio"
@@ -106,36 +117,8 @@ function Setting() {
           </div>
         </div>
       </div>
-      {/* <div className="p-5">
-        <h2 className="text-lg font-bold mb-4">Advance Settings</h2>
-
-        <div className="mb-5 flex items-center justify-between">
-          <span>Disable/Enable “Undo” Prompt</span>
-          <button
-            className={`px-4 py-2 ${
-              undoPromptEnabled ? "bg-red-500" : "bg-gray-300"
-            } text-white rounded`}
-            onClick={toggleUndoPrompt}
-          >
-            {undoPromptEnabled ? "Disable" : "Enable"}
-          </button>
-        </div>
-
-
-        <div className="mb-5 flex items-center justify-between">
-          <span>Disable/Enable notification alert</span>
-          <button
-            className={`px-4 py-2 ${
-              notificationsEnabled ? "bg-red-500" : "bg-gray-300"
-            } text-white rounded`}
-            onClick={toggleNotifications}
-          >
-            {notificationsEnabled ? "Disable" : "Enable"}
-          </button>
-        </div>
-      </div> */}
     </div>
   );
-}
+};
 
 export default Setting;

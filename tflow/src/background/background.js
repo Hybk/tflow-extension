@@ -2,15 +2,19 @@
 
 console.log("TabFlow, Tab Manager extension is starting");
 
-const INACTIVITY_THRESHOLD = 2 * 60 * 1000;
-const CHECK_INTERVAL = 30 * 1000;
-const DELETE_INACTIVE_GROUP_INTERVAL = 30 * 60 * 1000; // 30 minutes
+let INACTIVITY_THRESHOLD = 60 * 60 * 1000;
+let DELETE_INACTIVE_GROUP_INTERVAL = 24 * 60 * 60 * 1000;
+const UNDO_TIMEOUT = 10000;
 
 const tabLastInteractionTime = new Map();
 const tabCreationTime = new Map();
 let inactiveGroupId = null;
-let initialDelay = true;
 let inactiveGroupCreationTime = null;
+let deleteImmediately = false;
+let deletedTabs = [];
+
+let checkInactiveTabsTimeout;
+let deleteInactiveGroupInterval;
 
 async function saveState() {
   const state = {
@@ -18,6 +22,9 @@ async function saveState() {
     inactiveGroupCreationTime,
     tabCreationTime: [...tabCreationTime.entries()],
     tabLastInteractionTime: [...tabLastInteractionTime.entries()],
+    deleteImmediately,
+    INACTIVITY_THRESHOLD,
+    DELETE_INACTIVE_GROUP_INTERVAL,
   };
   await chrome.storage.local.set({ tabFlowState: state });
   console.log("Saved state:", state);
@@ -28,8 +35,11 @@ async function restoreState() {
   const state = result.tabFlowState || {};
   inactiveGroupId = state.inactiveGroupId || null;
   inactiveGroupCreationTime = state.inactiveGroupCreationTime || null;
+  deleteImmediately = state.deleteImmediately || false;
+  INACTIVITY_THRESHOLD = state.INACTIVITY_THRESHOLD || 60 * 60 * 1000;
+  DELETE_INACTIVE_GROUP_INTERVAL =
+    state.DELETE_INACTIVE_GROUP_INTERVAL || 24 * 60 * 60 * 1000;
 
-  // Restore Maps
   tabCreationTime.clear();
   tabLastInteractionTime.clear();
 
@@ -183,11 +193,6 @@ function setupTabListeners() {
 
 async function groupInactiveTabs() {
   console.log("Checking for inactive tabs");
-  if (initialDelay) {
-    initialDelay = false;
-    console.log("Skipping first check due to initial delay");
-    return;
-  }
 
   try {
     const tabs = await chrome.tabs.query({ currentWindow: true });
@@ -215,16 +220,91 @@ async function groupInactiveTabs() {
     const tabIdsToGroup = inactiveTabs.map((tab) => tab.id);
     console.log(`Tabs to group: ${tabIdsToGroup.join(", ")}`);
 
-    await groupTabs(tabIdsToGroup);
+    if (deleteImmediately) {
+      await deleteInactiveTabs(tabIdsToGroup);
+    } else {
+      await groupTabs(tabIdsToGroup);
+    }
   } catch (error) {
     console.error("Error in groupInactiveTabs:", error);
+  }
+
+  // Schedule the next check
+  scheduleNextCheck();
+}
+
+function scheduleNextCheck() {
+  clearTimeout(checkInactiveTabsTimeout);
+  checkInactiveTabsTimeout = setTimeout(
+    groupInactiveTabs,
+    INACTIVITY_THRESHOLD
+  );
+}
+
+async function deleteInactiveTabs(tabIds) {
+  console.log(`Deleting inactive tabs: ${tabIds.join(", ")}`);
+  try {
+    const tabsToDelete = await Promise.all(
+      tabIds.map((tabId) => chrome.tabs.get(tabId))
+    );
+    deletedTabs = tabsToDelete.filter((tab) => tab);
+    await chrome.tabs.remove(tabIds);
+    console.log(`Deleted inactive tabs: ${tabIds.join(", ")}`);
+    showDeleteNotification();
+  } catch (error) {
+    console.error("Error deleting inactive tabs:", error);
+  }
+}
+
+function showDeleteNotification() {
+  chrome.notifications.create({
+    type: "basic",
+    iconUrl: "icon.png",
+    title: "Inactive Tabs Deleted",
+    message: "Inactive tabs have been deleted. Click to undo.",
+    buttons: [{ title: "Undo" }, { title: "Dismiss" }],
+    priority: 2,
+  });
+
+  setTimeout(() => {
+    chrome.notifications.clear("inactiveTabsDeleted");
+    deletedTabs = [];
+  }, UNDO_TIMEOUT);
+}
+
+chrome.notifications.onButtonClicked.addListener(
+  (notificationId, buttonIndex) => {
+    if (notificationId === "inactiveTabsDeleted") {
+      if (buttonIndex === 0) {
+        undoTabDeletion();
+      }
+
+      chrome.notifications.clear(notificationId);
+    }
+  }
+);
+
+async function undoTabDeletion() {
+  console.log("Undoing tab deletion");
+  try {
+    for (const tab of deletedTabs) {
+      await chrome.tabs.create({
+        url: tab.url,
+        pinned: tab.pinned,
+        index: tab.index,
+      });
+    }
+    console.log("Restored deleted tabs");
+    deletedTabs = [];
+  } catch (error) {
+    console.error("Error undoing tab deletion:", error);
   }
 }
 
 function checkPermissions() {
   chrome.permissions.contains(
     {
-      permissions: ["tabs", "tabGroups", "storage"],
+      permissions: ["tabs", "tabGroups", "storage", "notifications"],
     },
     (result) => {
       if (result) {
@@ -260,6 +340,7 @@ async function deleteInactiveGroupIfExpired() {
         const groupTabs = await chrome.tabs.query({ groupId: inactiveGroupId });
         const tabIds = groupTabs.map((tab) => tab.id);
 
+        deletedTabs = groupTabs;
         await Promise.all([
           chrome.tabs.remove(tabIds),
           chrome.tabGroups.remove(inactiveGroupId),
@@ -269,6 +350,7 @@ async function deleteInactiveGroupIfExpired() {
         inactiveGroupCreationTime = null;
         console.log("Inactive group and its tabs deleted successfully");
         await saveState();
+        showDeleteNotification();
       } catch (error) {
         console.error("Error deleting inactive group and its tabs:", error);
       }
@@ -280,21 +362,100 @@ async function deleteInactiveGroupIfExpired() {
   }
 }
 
+function updateSettings(settings) {
+  console.log("Updating settings:", settings);
+  INACTIVITY_THRESHOLD = settings.inactiveTime * 60 * 1000;
+  deleteImmediately = settings.action === "delete";
+  DELETE_INACTIVE_GROUP_INTERVAL = settings.groupTime * 60 * 1000;
+  console.log(`New INACTIVITY_THRESHOLD: ${INACTIVITY_THRESHOLD}`);
+  console.log(`New deleteImmediately: ${deleteImmediately}`);
+  console.log(
+    `New DELETE_INACTIVE_GROUP_INTERVAL: ${DELETE_INACTIVE_GROUP_INTERVAL}`
+  );
+  saveState();
+
+  clearTimeout(checkInactiveTabsTimeout);
+  clearInterval(deleteInactiveGroupInterval);
+
+  chrome.tabs.query({}, (tabs) => {
+    tabs.forEach((tab) => {
+      updateLastInteractionTime(tab.id);
+    });
+  });
+
+  scheduleNextCheck();
+
+  deleteInactiveGroupInterval = setInterval(
+    deleteInactiveGroupIfExpired,
+    DELETE_INACTIVE_GROUP_INTERVAL
+  );
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "updateSettings") {
+    updateSettings(message.settings);
+    sendResponse({ success: true });
+  } else if (message.type === "getSettings") {
+    sendResponse({
+      action: deleteImmediately ? "delete" : "group",
+      inactiveTime: INACTIVITY_THRESHOLD / (60 * 1000),
+      groupTime: DELETE_INACTIVE_GROUP_INTERVAL / (60 * 1000),
+    });
+  }
+  return true;
+});
+
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason === "install" || details.reason === "update") {
+    // Set default settings if not already set
+    chrome.storage.local.get(
+      ["action", "inactiveTime", "groupTime"],
+      (result) => {
+        if (!result.action || !result.inactiveTime || !result.groupTime) {
+          const defaultSettings = {
+            action: "group",
+            inactiveTime: 60,
+            groupTime: 180,
+          };
+          chrome.storage.local.set(defaultSettings, () => {
+            console.log("Default settings applied:", defaultSettings);
+            updateSettings(defaultSettings);
+          });
+        } else {
+          updateSettings({
+            action: result.action,
+            inactiveTime: result.inactiveTime,
+            groupTime: result.groupTime,
+          });
+        }
+      }
+    );
+  }
+});
+
 function init() {
   restoreState().then(async () => {
+    // Load settings
+    chrome.storage.local.get(
+      ["action", "inactiveTime", "groupTime"],
+      (result) => {
+        if (result.action && result.inactiveTime && result.groupTime) {
+          updateSettings({
+            action: result.action,
+            inactiveTime: result.inactiveTime,
+            groupTime: result.groupTime,
+          });
+        }
+      }
+    );
+
     setupTabListeners();
     checkPermissions();
-    console.log(
-      `Setting up interval to check every ${CHECK_INTERVAL / 1000} seconds`
-    );
-    setInterval(groupInactiveTabs, CHECK_INTERVAL);
 
-    console.log(
-      `Setting up interval to delete inactive group every ${
-        DELETE_INACTIVE_GROUP_INTERVAL / 60000
-      } minutes`
+    deleteInactiveGroupInterval = setInterval(
+      deleteInactiveGroupIfExpired,
+      DELETE_INACTIVE_GROUP_INTERVAL
     );
-    setInterval(deleteInactiveGroupIfExpired, DELETE_INACTIVE_GROUP_INTERVAL);
 
     chrome.windows.onRemoved.addListener(handleWindowClose);
     chrome.windows.onCreated.addListener(handleWindowOpen);
@@ -302,11 +463,3 @@ function init() {
 }
 
 init();
-
-// chrome.action.onClicked.addListener(() => {
-//   console.log("Extension icon clicked. Attempting to group all tabs.");
-//   chrome.tabs.query({ currentWindow: true }, (tabs) => {
-//     const tabIds = tabs.map((t) => t.id);
-//     groupTabs(tabIds);
-//   });
-// });
