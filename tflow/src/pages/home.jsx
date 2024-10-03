@@ -1,3 +1,6 @@
+/* global chrome */
+
+import { useState, useEffect } from "react";
 import Logo from "/icon-48px.png";
 import {
   XMarkIcon,
@@ -7,18 +10,40 @@ import {
   WrenchIcon,
 } from "@heroicons/react/24/solid";
 import { PieChart, Pie, Cell, Tooltip } from "recharts";
-import { useState } from "react";
 import Settings from "./setting";
 
-const outerData = [{ name: "Total", value: 100 }];
-const innerData = [
-  { name: "Active Tabs", value: 60 },
-  { name: "Inactive Tabs", value: 40 },
-];
-
 const Home = () => {
-  const [hoveredIndex, setHoveredIndex] = useState(null);
   const [view, setView] = useState("home");
+  const [hoveredIndex, setHoveredIndex] = useState(null);
+  const [tabData, setTabData] = useState({
+    totalTabs: 0,
+    activeTabs: 0,
+    inactiveTabs: 0,
+  });
+
+  const fetchTabData = () => {
+    chrome.runtime.sendMessage({ type: "getTabCounts" }, (response) => {
+      if (response) {
+        setTabData(response);
+      }
+    });
+  };
+
+  useEffect(() => {
+    fetchTabData();
+
+    const messageListener = (message) => {
+      if (message.type === "updatePieChart") {
+        setTabData(message.data);
+      }
+    };
+
+    chrome.runtime.onMessage.addListener(messageListener);
+
+    return () => {
+      chrome.runtime.onMessage.removeListener(messageListener);
+    };
+  }, []);
 
   const handleClose = () => {
     window.close();
@@ -34,9 +59,29 @@ const Home = () => {
     setView("settings");
   };
 
+  const handleCleanup = () => {
+    chrome.runtime.sendMessage({ type: "manualCleanup" }, (response) => {
+      if (response && response.success) {
+        console.log("Cleanup successful");
+        fetchTabData(); // Refresh the tab data immediately after cleanup
+      } else {
+        console.error(
+          "Cleanup failed:",
+          response ? response.error : "Unknown error"
+        );
+      }
+    });
+  };
+
   if (view === "settings") {
     return <Settings />;
   }
+
+  const outerData = [{ name: "Total", value: tabData.totalTabs }];
+  const innerData = [
+    { name: "Active Tabs", value: tabData.activeTabs },
+    { name: "Inactive Tabs", value: tabData.inactiveTabs },
+  ];
 
   return (
     <div className="w-full h-[auto] bg-secondary">
@@ -86,18 +131,24 @@ const Home = () => {
             <Tooltip />
           </PieChart>
         </div>
-        <div className=" flex flex-col justify-center space-y-3">
+        <div className="flex flex-col justify-center space-y-3">
           <div className="flex items-center space-x-3">
             <div className="w-[10px] h-[10px] rounded-full bg-[#FFA500]"></div>
-            <p className="font-bold text-[15px]">Total Tabs</p>
+            <p className="font-bold text-[15px]">
+              Total Tabs: {tabData.totalTabs}
+            </p>
           </div>
           <div className="flex items-center space-x-3">
             <div className="w-[10px] h-[10px] rounded-full bg-[#82ca9d]"></div>
-            <p className="font-bold text-[15px]">Inactive Tabs</p>
+            <p className="font-bold text-[15px]">
+              Inactive Tabs: {tabData.inactiveTabs}
+            </p>
           </div>
           <div className="flex items-center space-x-3">
             <div className="w-[10px] h-[10px] rounded-full bg-[#8884d8]"></div>
-            <p className="font-bold text-[15px]">Active Tabs</p>
+            <p className="font-bold text-[15px]">
+              Active Tabs: {tabData.activeTabs}
+            </p>
           </div>
         </div>
       </div>
@@ -109,7 +160,10 @@ const Home = () => {
             and makes browsing faster and smoother!
           </p>
         </div>
-        <button className="flex items-center space-x-2 border border-primary rounded-full bg-white py-3 px-4 hover:bg-primary hover:text-white transition-colors duration-[0.5s] ">
+        <button
+          className="flex items-center space-x-2 border border-primary rounded-full bg-white py-3 px-4 hover:bg-primary hover:text-white transition-colors duration-[0.5s]"
+          onClick={handleCleanup}
+        >
           <TrashIcon className="h-5 w-5" />
           <span className="font-semibold">Clean up</span>
         </button>

@@ -409,6 +409,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       deleteInactiveGroup: deleteInactiveGroup,
       groupDeleteTime: DELETE_INACTIVE_GROUP_INTERVAL / (60 * 1000),
     });
+  } else if (message.type === "manualCleanup") {
+    console.log("Manual cleanup initiated");
+    groupInactiveTabs()
+      .then(() => {
+        sendResponse({ success: true });
+      })
+      .catch((error) => {
+        console.error("Error during manual cleanup:", error);
+        sendResponse({ success: false, error: error.message });
+      });
+    return true; // Indicates that the response will be sent asynchronously
+  } else if (message.type === "getTabCounts") {
+    chrome.tabs.query({}, (tabs) => {
+      const inactiveTabs = tabs.filter((tab) => isTabInactive(tab.id));
+      sendResponse({
+        totalTabs: tabs.length,
+        inactiveTabs: inactiveTabs.length,
+        activeTabs: tabs.length - inactiveTabs.length,
+      });
+    });
+    return true; // Indicates that the response will be sent asynchronously
   }
   return true;
 });
