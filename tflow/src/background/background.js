@@ -11,6 +11,7 @@ const tabCreationTime = new Map();
 let inactiveGroupId = null;
 let inactiveGroupCreationTime = null;
 let deleteImmediately = false;
+let deleteInactiveGroup = false;
 let deletedTabs = [];
 
 let checkInactiveTabsTimeout;
@@ -23,6 +24,7 @@ async function saveState() {
     tabCreationTime: [...tabCreationTime.entries()],
     tabLastInteractionTime: [...tabLastInteractionTime.entries()],
     deleteImmediately,
+    deleteInactiveGroup,
     INACTIVITY_THRESHOLD,
     DELETE_INACTIVE_GROUP_INTERVAL,
   };
@@ -36,6 +38,7 @@ async function restoreState() {
   inactiveGroupId = state.inactiveGroupId || null;
   inactiveGroupCreationTime = state.inactiveGroupCreationTime || null;
   deleteImmediately = state.deleteImmediately || false;
+  deleteInactiveGroup = state.deleteInactiveGroup || false;
   INACTIVITY_THRESHOLD = state.INACTIVITY_THRESHOLD || 60 * 60 * 1000;
   DELETE_INACTIVE_GROUP_INTERVAL =
     state.DELETE_INACTIVE_GROUP_INTERVAL || 24 * 60 * 60 * 1000;
@@ -366,9 +369,11 @@ function updateSettings(settings) {
   console.log("Updating settings:", settings);
   INACTIVITY_THRESHOLD = settings.inactiveTime * 60 * 1000;
   deleteImmediately = settings.action === "delete";
-  DELETE_INACTIVE_GROUP_INTERVAL = settings.groupTime * 60 * 1000;
+  deleteInactiveGroup = settings.deleteInactiveGroup;
+  DELETE_INACTIVE_GROUP_INTERVAL = settings.groupDeleteTime * 60 * 1000;
   console.log(`New INACTIVITY_THRESHOLD: ${INACTIVITY_THRESHOLD}`);
   console.log(`New deleteImmediately: ${deleteImmediately}`);
+  console.log(`New deleteInactiveGroup: ${deleteInactiveGroup}`);
   console.log(
     `New DELETE_INACTIVE_GROUP_INTERVAL: ${DELETE_INACTIVE_GROUP_INTERVAL}`
   );
@@ -385,10 +390,12 @@ function updateSettings(settings) {
 
   scheduleNextCheck();
 
-  deleteInactiveGroupInterval = setInterval(
-    deleteInactiveGroupIfExpired,
-    DELETE_INACTIVE_GROUP_INTERVAL
-  );
+  if (deleteInactiveGroup) {
+    deleteInactiveGroupInterval = setInterval(
+      deleteInactiveGroupIfExpired,
+      DELETE_INACTIVE_GROUP_INTERVAL
+    );
+  }
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -399,7 +406,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({
       action: deleteImmediately ? "delete" : "group",
       inactiveTime: INACTIVITY_THRESHOLD / (60 * 1000),
-      groupTime: DELETE_INACTIVE_GROUP_INTERVAL / (60 * 1000),
+      deleteInactiveGroup: deleteInactiveGroup,
+      groupDeleteTime: DELETE_INACTIVE_GROUP_INTERVAL / (60 * 1000),
     });
   }
   return true;
@@ -409,13 +417,19 @@ chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === "install" || details.reason === "update") {
     // Set default settings if not already set
     chrome.storage.local.get(
-      ["action", "inactiveTime", "groupTime"],
+      ["action", "inactiveTime", "deleteInactiveGroup", "groupDeleteTime"],
       (result) => {
-        if (!result.action || !result.inactiveTime || !result.groupTime) {
+        if (
+          !result.action ||
+          !result.inactiveTime ||
+          result.deleteInactiveGroup === undefined ||
+          !result.groupDeleteTime
+        ) {
           const defaultSettings = {
             action: "group",
             inactiveTime: 60,
-            groupTime: 180,
+            deleteInactiveGroup: false,
+            groupDeleteTime: 180,
           };
           chrome.storage.local.set(defaultSettings, () => {
             console.log("Default settings applied:", defaultSettings);
@@ -425,7 +439,8 @@ chrome.runtime.onInstalled.addListener((details) => {
           updateSettings({
             action: result.action,
             inactiveTime: result.inactiveTime,
-            groupTime: result.groupTime,
+            deleteInactiveGroup: result.deleteInactiveGroup,
+            groupDeleteTime: result.groupDeleteTime,
           });
         }
       }
@@ -437,13 +452,19 @@ function init() {
   restoreState().then(async () => {
     // Load settings
     chrome.storage.local.get(
-      ["action", "inactiveTime", "groupTime"],
+      ["action", "inactiveTime", "deleteInactiveGroup", "groupDeleteTime"],
       (result) => {
-        if (result.action && result.inactiveTime && result.groupTime) {
+        if (
+          result.action &&
+          result.inactiveTime &&
+          result.deleteInactiveGroup !== undefined &&
+          result.groupDeleteTime
+        ) {
           updateSettings({
             action: result.action,
             inactiveTime: result.inactiveTime,
-            groupTime: result.groupTime,
+            deleteInactiveGroup: result.deleteInactiveGroup,
+            groupDeleteTime: result.groupDeleteTime,
           });
         }
       }
@@ -452,10 +473,12 @@ function init() {
     setupTabListeners();
     checkPermissions();
 
-    deleteInactiveGroupInterval = setInterval(
-      deleteInactiveGroupIfExpired,
-      DELETE_INACTIVE_GROUP_INTERVAL
-    );
+    if (deleteInactiveGroup) {
+      deleteInactiveGroupInterval = setInterval(
+        deleteInactiveGroupIfExpired,
+        DELETE_INACTIVE_GROUP_INTERVAL
+      );
+    }
 
     chrome.windows.onRemoved.addListener(handleWindowClose);
     chrome.windows.onCreated.addListener(handleWindowOpen);

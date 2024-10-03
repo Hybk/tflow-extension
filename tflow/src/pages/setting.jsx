@@ -1,32 +1,39 @@
 /* global chrome */
 
 import { useState, useEffect } from "react";
-import Logo from "/icon-48px.png";
 import { XMarkIcon } from "@heroicons/react/24/solid";
 
 const Setting = () => {
   const [action, setAction] = useState("group");
   const [inactiveTime, setInactiveTime] = useState(60);
-  const [groupTime, setGroupTime] = useState(180);
+  const [deleteInactiveGroup, setDeleteInactiveGroup] = useState(false);
+  const [groupDeleteTime, setGroupDeleteTime] = useState(180);
 
   useEffect(() => {
     chrome.storage.local.get(
-      ["action", "inactiveTime", "groupTime"],
+      ["action", "inactiveTime", "deleteInactiveGroup", "groupDeleteTime"],
       (result) => {
         if (result.action) setAction(result.action);
         if (result.inactiveTime) setInactiveTime(result.inactiveTime);
-        if (result.groupTime) setGroupTime(result.groupTime);
+        if (result.deleteInactiveGroup !== undefined)
+          setDeleteInactiveGroup(result.deleteInactiveGroup);
+        if (result.groupDeleteTime) setGroupDeleteTime(result.groupDeleteTime);
       }
     );
   }, []);
 
   useEffect(() => {
-    chrome.storage.local.set({ action, inactiveTime, groupTime });
+    chrome.storage.local.set({
+      action,
+      inactiveTime,
+      deleteInactiveGroup,
+      groupDeleteTime,
+    });
     chrome.runtime.sendMessage({
       type: "updateSettings",
-      settings: { action, inactiveTime, groupTime },
+      settings: { action, inactiveTime, deleteInactiveGroup, groupDeleteTime },
     });
-  }, [action, inactiveTime, groupTime]);
+  }, [action, inactiveTime, deleteInactiveGroup, groupDeleteTime]);
 
   const handleClose = () => {
     window.close();
@@ -36,7 +43,7 @@ const Setting = () => {
     <div className="w-full h-[auto] bg-secondary">
       <header className="flex justify-between bg-white h-16 px-6 items-center">
         <div className="flex items-center space-x-3">
-          <img src={Logo} alt="TabFlow Logo" className="w-6 h-6" />
+          <img src="/icon-48px.png" alt="TabFlow Logo" className="w-6 h-6" />
           <h1 className="text-xl font-bold">TabFlow</h1>
         </div>
         <XMarkIcon className="w-6 h-6 cursor-pointer" onClick={handleClose} />
@@ -83,21 +90,40 @@ const Setting = () => {
               </label>
             </div>
             {action === "group" && (
-              <div>
-                <div className="mb-5">
-                  <label htmlFor="groupSlider" className="font-bold">
-                    Grouped Tab Stay Time (minutes): {groupTime}
-                  </label>
+              <div className="mt-3 ml-5">
+                <div className="flex items-center mb-2">
                   <input
-                    id="groupSlider"
-                    type="range"
-                    min="60"
-                    max="240"
-                    value={groupTime}
-                    onChange={(e) => setGroupTime(Number(e.target.value))}
-                    className="w-full"
+                    type="checkbox"
+                    id="deleteInactiveGroup"
+                    checked={deleteInactiveGroup}
+                    onChange={(e) => setDeleteInactiveGroup(e.target.checked)}
+                    className="mr-2"
                   />
+                  <label
+                    htmlFor="deleteInactiveGroup"
+                    className="cursor-pointer"
+                  >
+                    Delete inactive group after a threshold
+                  </label>
                 </div>
+                {deleteInactiveGroup && (
+                  <div className="mb-5">
+                    <label htmlFor="groupDeleteSlider" className="font-bold">
+                      Group Deletion Threshold (minutes): {groupDeleteTime}
+                    </label>
+                    <input
+                      id="groupDeleteSlider"
+                      type="range"
+                      min="60"
+                      max="1440"
+                      value={groupDeleteTime}
+                      onChange={(e) =>
+                        setGroupDeleteTime(Number(e.target.value))
+                      }
+                      className="w-full"
+                    />
+                  </div>
+                )}
               </div>
             )}
           </div>
