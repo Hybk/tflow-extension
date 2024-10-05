@@ -1,21 +1,21 @@
+import { useState } from "react";
 import Onboarding from "./pages/onboarding";
 import Home from "./pages/home";
 import Setting from "./pages/setting";
-import { useState } from "react";
 
 function App() {
-  const [view] = useState("onboarding");
+  const [view, setView] = useState("onboarding");
 
   const renderView = () => {
     switch (view) {
       case "onboarding":
-        return <Onboarding />;
+        return <Onboarding setView={setView} />;
       case "home":
-        return <Home />;
-      case "setting":
-        return <Setting />;
+        return <Home setView={setView} />;
+      case "settings":
+        return <Setting setView={setView} />;
       default:
-        return <Onboarding />;
+        return <Onboarding setView={setView} />;
     }
   };
 

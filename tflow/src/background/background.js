@@ -13,6 +13,7 @@ let inactiveGroupCreationTime = null;
 let deleteImmediately = false;
 let deleteInactiveGroup = false;
 let deletedTabs = [];
+let continueWhereLeftOff = false;
 
 let checkInactiveTabsTimeout;
 let deleteInactiveGroupInterval;
@@ -27,6 +28,7 @@ async function saveState() {
     deleteInactiveGroup,
     INACTIVITY_THRESHOLD,
     DELETE_INACTIVE_GROUP_INTERVAL,
+    continueWhereLeftOff,
   };
   await chrome.storage.local.set({ tabFlowState: state });
   console.log("Saved state:", state);
@@ -42,6 +44,7 @@ async function restoreState() {
   INACTIVITY_THRESHOLD = state.INACTIVITY_THRESHOLD || 60 * 60 * 1000;
   DELETE_INACTIVE_GROUP_INTERVAL =
     state.DELETE_INACTIVE_GROUP_INTERVAL || 24 * 60 * 60 * 1000;
+  continueWhereLeftOff = state.continueWhereLeftOff || false;
 
   tabCreationTime.clear();
   tabLastInteractionTime.clear();
@@ -365,18 +368,59 @@ async function deleteInactiveGroupIfExpired() {
   }
 }
 
+async function saveSession() {
+  if (continueWhereLeftOff) {
+    const windows = await chrome.windows.getAll({ populate: true });
+    const session = windows.map((window) => ({
+      tabs: window.tabs.map((tab) => ({
+        url: tab.url,
+        pinned: tab.pinned,
+        active: tab.active,
+      })),
+    }));
+    await chrome.storage.local.set({ savedSession: session });
+    console.log("Session saved:", session);
+  }
+}
+
+async function restoreSession() {
+  if (continueWhereLeftOff) {
+    const result = await chrome.storage.local.get("savedSession");
+    const savedSession = result.savedSession;
+    if (savedSession) {
+      for (const window of savedSession) {
+        const newWindow = await chrome.windows.create({
+          url: window.tabs[0].url,
+        });
+        for (let i = 1; i < window.tabs.length; i++) {
+          const tab = window.tabs[i];
+          await chrome.tabs.create({
+            windowId: newWindow.id,
+            url: tab.url,
+            pinned: tab.pinned,
+            active: tab.active,
+          });
+        }
+      }
+      console.log("Session restored");
+    }
+  }
+}
+
 function updateSettings(settings) {
   console.log("Updating settings:", settings);
   INACTIVITY_THRESHOLD = settings.inactiveTime * 60 * 1000;
   deleteImmediately = settings.action === "delete";
   deleteInactiveGroup = settings.deleteInactiveGroup;
   DELETE_INACTIVE_GROUP_INTERVAL = settings.groupDeleteTime * 60 * 1000;
+  continueWhereLeftOff = settings.continueWhereLeftOff;
   console.log(`New INACTIVITY_THRESHOLD: ${INACTIVITY_THRESHOLD}`);
   console.log(`New deleteImmediately: ${deleteImmediately}`);
   console.log(`New deleteInactiveGroup: ${deleteInactiveGroup}`);
   console.log(
     `New DELETE_INACTIVE_GROUP_INTERVAL: ${DELETE_INACTIVE_GROUP_INTERVAL}`
   );
+  console.log(`New continueWhereLeftOff: ${continueWhereLeftOff}`);
   saveState();
 
   clearTimeout(checkInactiveTabsTimeout);
@@ -408,6 +452,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       inactiveTime: INACTIVITY_THRESHOLD / (60 * 1000),
       deleteInactiveGroup: deleteInactiveGroup,
       groupDeleteTime: DELETE_INACTIVE_GROUP_INTERVAL / (60 * 1000),
+      continueWhereLeftOff: continueWhereLeftOff,
     });
   } else if (message.type === "manualCleanup") {
     console.log("Manual cleanup initiated");
@@ -419,7 +464,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         console.error("Error during manual cleanup:", error);
         sendResponse({ success: false, error: error.message });
       });
-    return true; // Indicates that the response will be sent asynchronously
+    return true;
   } else if (message.type === "getTabCounts") {
     chrome.tabs.query({}, (tabs) => {
       const inactiveTabs = tabs.filter((tab) => isTabInactive(tab.id));
@@ -429,7 +474,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         activeTabs: tabs.length - inactiveTabs.length,
       });
     });
-    return true; // Indicates that the response will be sent asynchronously
+    return true;
   }
   return true;
 });
@@ -444,13 +489,15 @@ chrome.runtime.onInstalled.addListener((details) => {
           !result.action ||
           !result.inactiveTime ||
           result.deleteInactiveGroup === undefined ||
-          !result.groupDeleteTime
+          !result.groupDeleteTime ||
+          result.continueWhereLeftOff === undefined
         ) {
           const defaultSettings = {
             action: "group",
             inactiveTime: 60,
             deleteInactiveGroup: false,
             groupDeleteTime: 180,
+            continueWhereLeftOff: false,
           };
           chrome.storage.local.set(defaultSettings, () => {
             console.log("Default settings applied:", defaultSettings);
@@ -462,6 +509,7 @@ chrome.runtime.onInstalled.addListener((details) => {
             inactiveTime: result.inactiveTime,
             deleteInactiveGroup: result.deleteInactiveGroup,
             groupDeleteTime: result.groupDeleteTime,
+            continueWhereLeftOff: result.continueWhereLeftOff,
           });
         }
       }
@@ -469,23 +517,37 @@ chrome.runtime.onInstalled.addListener((details) => {
   }
 });
 
+chrome.windows.onRemoved.addListener(async (windowId) => {
+  console.log(`Window ${windowId} closing, saving state and session`);
+  await saveState();
+  await saveSession();
+});
+
 function init() {
   restoreState().then(async () => {
     // Load settings
     chrome.storage.local.get(
-      ["action", "inactiveTime", "deleteInactiveGroup", "groupDeleteTime"],
+      [
+        "action",
+        "inactiveTime",
+        "deleteInactiveGroup",
+        "groupDeleteTime",
+        "continueWhereLeftOff",
+      ],
       (result) => {
         if (
           result.action &&
           result.inactiveTime &&
           result.deleteInactiveGroup !== undefined &&
-          result.groupDeleteTime
+          result.groupDeleteTime &&
+          result.continueWhereLeftOff !== undefined
         ) {
           updateSettings({
             action: result.action,
             inactiveTime: result.inactiveTime,
             deleteInactiveGroup: result.deleteInactiveGroup,
             groupDeleteTime: result.groupDeleteTime,
+            continueWhereLeftOff: result.continueWhereLeftOff,
           });
         }
       }
@@ -503,6 +565,10 @@ function init() {
 
     chrome.windows.onRemoved.addListener(handleWindowClose);
     chrome.windows.onCreated.addListener(handleWindowOpen);
+
+    if (continueWhereLeftOff) {
+      restoreSession();
+    }
   });
 }
 

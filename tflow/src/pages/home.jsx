@@ -1,5 +1,5 @@
 /* global chrome */
-
+import PropTypes from "prop-types";
 import { useState, useEffect } from "react";
 import Logo from "/icon-48px.png";
 import {
@@ -10,10 +10,8 @@ import {
   WrenchIcon,
 } from "@heroicons/react/24/solid";
 import { PieChart, Pie, Cell, Tooltip } from "recharts";
-import Settings from "./setting";
 
-const Home = () => {
-  const [view, setView] = useState("home");
+const Home = ({ setView }) => {
   const [hoveredIndex, setHoveredIndex] = useState(null);
   const [tabData, setTabData] = useState({
     totalTabs: 0,
@@ -72,10 +70,6 @@ const Home = () => {
       }
     });
   };
-
-  if (view === "settings") {
-    return <Settings />;
-  }
 
   const outerData = [{ name: "Total", value: tabData.totalTabs }];
   const innerData = [
@@ -198,6 +192,10 @@ const Home = () => {
       </footer>
     </div>
   );
+};
+
+Home.propTypes = {
+  setView: PropTypes.func.isRequired,
 };
 
 export default Home;

@@ -1,4 +1,5 @@
 import Logo from "/icon-48px.png";
+import PropTypes from "prop-types";
 import {
   XMarkIcon,
   ChevronDownIcon,
@@ -6,11 +7,9 @@ import {
 } from "@heroicons/react/24/solid";
 import { useState } from "react";
 import "../App.css";
-import Home from "./home";
 
-function Onboarding() {
+function Onboarding({ setView }) {
   const [isClicked, setIsClicked] = useState(false);
-  const [view, setView] = useState("onboarding");
 
   const handleStart = () => {
     setIsClicked(true);
@@ -19,10 +18,6 @@ function Onboarding() {
       setView("home");
     }, 500);
   };
-
-  if (view === "home") {
-    return <Home />;
-  }
 
   return (
     <div className="w-full bg-secondary">
@@ -100,5 +95,8 @@ function Onboarding() {
     </div>
   );
 }
+Onboarding.propTypes = {
+  setView: PropTypes.func.isRequired,
+};
 
 export default Onboarding;

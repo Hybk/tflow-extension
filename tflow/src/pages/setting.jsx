@@ -1,9 +1,14 @@
 /* global chrome */
-
 import { useState, useEffect } from "react";
-import { XMarkIcon } from "@heroicons/react/24/solid";
+import PropTypes from "prop-types";
+import {
+  XMarkIcon,
+  HomeIcon,
+  WrenchIcon,
+  CogIcon,
+} from "@heroicons/react/24/solid";
 
-const Setting = () => {
+const Setting = ({ setView }) => {
   const [action, setAction] = useState("group");
   const [inactiveTime, setInactiveTime] = useState(60);
   const [deleteInactiveGroup, setDeleteInactiveGroup] = useState(false);
@@ -37,6 +42,10 @@ const Setting = () => {
 
   const handleClose = () => {
     window.close();
+  };
+
+  const handleHomeClick = () => {
+    setView("home");
   };
 
   return (
@@ -143,8 +152,42 @@ const Setting = () => {
           </div>
         </div>
       </div>
+      <div className="w-[100%] h-[70px] flex">
+        <div
+          className="w-[50%] h-[100%] flex items-center justify-center border-t border-b border-primary bg-white cursor-pointer hover:bg-secondary transition-colors duration-[0.5s]"
+          onClick={handleHomeClick}
+        >
+          <HomeIcon className="w-6 h-6 " />
+        </div>
+        <div
+          id="settings"
+          className="w-[50%] h-[100%] bg-primary flex items-center justify-center cursor-pointer"
+        >
+          <CogIcon className="w-6 h-6 text-white" />
+        </div>
+      </div>
+      <footer className="flex justify-between items-center p-3 bg-white">
+        <div className="flex items-center space-x-1">
+          <WrenchIcon className="w-4 h-4" />
+          <p className="text-xs font-semibold">
+            Pro Tip: Pin the extension for easy access to control
+          </p>
+        </div>
+        <a
+          href="https://github.com/Hybk/TabFlow-Extention"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-black underline text-xs"
+        >
+          Github
+        </a>
+      </footer>
     </div>
   );
+};
+
+Setting.propTypes = {
+  setView: PropTypes.func.isRequired,
 };
 
 export default Setting;
