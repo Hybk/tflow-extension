@@ -73,7 +73,6 @@ const DEFAULT_SETTINGS: TabFlowSettings = {
 };
 
 const Setting: React.FC = () => {
-  // State management with proper typing
   const [settings, setSettings] = useState<TabFlowSettings>(DEFAULT_SETTINGS);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [page, setPage] = useState<Page>(Page.SETTINGS);
@@ -99,11 +98,8 @@ const Setting: React.FC = () => {
 
     loadSettings();
   }, []);
-
   // Save settings with debounce
   useEffect(() => {
-    if (!isSaving) return;
-
     const saveSettings = async () => {
       try {
         const message: RuntimeMessage = {
@@ -119,11 +115,11 @@ const Setting: React.FC = () => {
       }
     };
 
-    const timeoutId = setTimeout(saveSettings, 500);
-    return () => clearTimeout(timeoutId);
+    if (isSaving) {
+      saveSettings();
+    }
   }, [settings, isSaving]);
 
-  // Update settings handler with proper typing
   const updateSettings = (updates: Partial<TabFlowSettings>) => {
     setSettings((prev) => ({ ...prev, ...updates }));
     setIsSaving(true);
@@ -136,10 +132,6 @@ const Setting: React.FC = () => {
   if (page === Page.HOME) {
     return <Home />;
   }
-
-  // const handleClose = () => {
-  //   window.close();
-  // };
 
   return (
     <div className="w-full h-[auto] bg-gray-50">

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Logo from "/icon-48px.png";
 import {
   CogIcon,
@@ -10,6 +10,12 @@ import {
 import { Cell, Pie, PieChart, Tooltip } from "recharts";
 import Settings from "./Settings";
 import { Page } from "../enums";
+
+interface TabCounts {
+  totalTabs: number;
+  inactiveTabs: number;
+  activeTabs: number;
+}
 
 // Card Components - matching Settings page
 const Card: React.FC<{ children: React.ReactNode; className?: string }> = ({
@@ -60,6 +66,31 @@ const innerData: ChartDataItem[] = [
 const Home: React.FC = () => {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [page, setPage] = useState<Page>(Page.HOME);
+  const [tabCounts, setTabCounts] = useState<TabCounts>({
+    totalTabs: 0,
+    inactiveTabs: 0,
+    activeTabs: 0,
+  });
+
+  const getTabCounts = async () => {
+    try {
+      const counts = await new Promise<TabCounts>((resolve, reject) => {
+        chrome.runtime.sendMessage({ type: "getTabCounts" }, (response) => {
+          if (chrome.runtime.lastError) {
+            reject(chrome.runtime.lastError.message);
+          } else {
+            resolve(response);
+          }
+        });
+      });
+      setTabCounts(counts);
+    } catch (error) {
+      console.error("Error getting tab counts:", error);
+    }
+  };
+  useEffect(() => {
+    getTabCounts();
+  }, []);
 
   const getCellStyle = (index: number): React.CSSProperties => ({
     transform: index === hoveredIndex ? "scale(1.1)" : "scale(1)",
@@ -74,7 +105,24 @@ const Home: React.FC = () => {
   if (page === Page.SETTINGS) {
     return <Settings />;
   }
-
+  const handleManualCleanup = async () => {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        chrome.runtime.sendMessage({ type: "manualCleanup" }, (response) => {
+          if (chrome.runtime.lastError) {
+            reject(chrome.runtime.lastError.message);
+          } else if (response.success) {
+            resolve();
+          } else {
+            reject(response.error);
+          }
+        });
+      });
+      getTabCounts();
+    } catch (error) {
+      console.error("Error during manual cleanup:", error);
+    }
+  };
   return (
     <div className="w-full h-auto bg-gray-50">
       <header className="flex justify-between bg-white h-16 px-6 items-center shadow-sm">
@@ -134,19 +182,19 @@ const Home: React.FC = () => {
                   <div className="flex items-center space-x-3">
                     <div className="w-3 h-3 rounded-full bg-[#7C3AED]"></div>
                     <p className="text-sm font-medium text-gray-700">
-                      Total Tabs (100)
+                      Total Tabs({tabCounts.totalTabs})
                     </p>
                   </div>
                   <div className="flex items-center space-x-3">
                     <div className="w-3 h-3 rounded-full bg-[#82ca9d]"></div>
                     <p className="text-sm font-medium text-gray-700">
-                      Inactive Tabs (40)
+                      Inactive Tabs ({tabCounts.inactiveTabs})
                     </p>
                   </div>
                   <div className="flex items-center space-x-3">
                     <div className="w-3 h-3 rounded-full bg-[#8884d8]"></div>
                     <p className="text-sm font-medium text-gray-700">
-                      Active Tabs (60)
+                      Active Tabs ({tabCounts.activeTabs})
                     </p>
                   </div>
                 </div>
@@ -163,7 +211,10 @@ const Home: React.FC = () => {
                   performance, and makes browsing faster and smoother!
                 </p>
               </div>
-              <button className="flex items-center space-x-2 bg-primary text-white rounded-lg py-2 px-4 hover:bg-primary/90 transition-colors duration-200">
+              <button
+                className="flex items-center space-x-2 bg-primary text-white rounded-lg py-2 px-4 hover:bg-primary/90 transition-colors duration-200"
+                onClick={handleManualCleanup}
+              >
                 <TrashIcon className="h-5 w-5" />
                 <span className="font-medium">Clean up</span>
               </button>

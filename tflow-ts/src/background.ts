@@ -1,5 +1,6 @@
 /* global chrome */
 
+import { Logger } from "tslog";
 // Type definitions
 
 type Timeout = ReturnType<typeof setTimeout>;
@@ -14,6 +15,12 @@ interface TabState {
   INACTIVITY_THRESHOLD: number;
   DELETE_INACTIVE_GROUP_INTERVAL: number;
   continueWhereLeftOff: boolean;
+}
+
+interface MyLogObj {
+  level: string;
+  message: string;
+  timestamp: number;
 }
 
 interface TabFlowSettings {
@@ -74,9 +81,17 @@ class TabFlowManager {
 
   private checkInactiveTabsTimeout?: Timeout;
   private deleteInactiveGroupInterval?: Interval;
+  private logger: Logger<MyLogObj>;
 
   constructor() {
+    this.logger = this.setupLogger();
     this.init();
+  }
+
+  private setupLogger(): Logger<MyLogObj> {
+    return new Logger<MyLogObj>({
+      name: "TabFlowManager",
+    });
   }
 
   private async saveState(): Promise<void> {
@@ -92,7 +107,7 @@ class TabFlowManager {
       continueWhereLeftOff: this.continueWhereLeftOff,
     };
     await chrome.storage.local.set({ tabFlowState: state });
-    console.log("Saved state:", state);
+    this.logger.info("Saved state:", state);
   }
 
   private async restoreState(): Promise<void> {
@@ -118,12 +133,12 @@ class TabFlowManager {
       this.tabLastInteractionTime.set(parseInt(String(key)), value)
     );
 
-    console.log("Restored state:", state);
+    this.logger.info("Restored state:", state);
   }
 
   private updateLastInteractionTime(tabId: number): void {
     this.tabLastInteractionTime.set(tabId, Date.now());
-    console.log(`Updated last interaction time for tab ${tabId}`);
+    this.logger.debug(`Updated last interaction time for tab ${tabId}`);
   }
 
   private isTabInactive(tabId: number): boolean {
@@ -135,26 +150,26 @@ class TabFlowManager {
       currentTime - lastInteraction > this.INACTIVITY_THRESHOLD &&
       currentTime - creationTime > this.INACTIVITY_THRESHOLD;
 
-    console.log(`Tab ${tabId} inactive status: ${isInactive}`);
+    this.logger.debug(`Tab ${tabId} inactive status: ${isInactive}`);
     return isInactive;
   }
 
   private async findOrCreateInactiveGroup(
     tabIds?: number[]
   ): Promise<number | null> {
-    console.log("Searching for existing 'Inactive Tabs' group");
+    this.logger.debug('Searching for existing "Inactive Tabs" group');
     const groups = await chrome.tabGroups.query({ title: "Inactive Tabs" });
 
     if (groups.length > 0) {
       this.inactiveGroupId = groups[0].id;
-      console.log(
-        `Found existing 'Inactive Tabs' group with ID: ${this.inactiveGroupId}`
+      this.logger.info(
+        `Found existing "Inactive Tabs" group with ID: ${this.inactiveGroupId}`
       );
       return this.inactiveGroupId;
     }
 
     if (tabIds?.length) {
-      console.log("'Inactive Tabs' group not found, creating a new one");
+      this.logger.info('"Inactive Tabs" group not found, creating a new one');
       const groupId = await chrome.tabs.group({ tabIds });
       await chrome.tabGroups.update(groupId, {
         title: "Inactive Tabs",
@@ -163,75 +178,79 @@ class TabFlowManager {
       });
       this.inactiveGroupId = groupId;
       this.inactiveGroupCreationTime = Date.now();
-      console.log(
-        `Created new 'Inactive Tabs' group with ID: ${this.inactiveGroupId}`
+      this.logger.info(
+        `Created new "Inactive Tabs" group with ID: ${this.inactiveGroupId}`
       );
       return this.inactiveGroupId;
     }
 
-    console.log("No tabs to group, 'Inactive Tabs' group not created");
+    this.logger.info('No tabs to group, "Inactive Tabs" group not created');
     return null;
   }
 
   private async groupTabs(tabIds: number[]): Promise<void> {
     if (tabIds.length === 0) return;
 
-    console.log(`Attempting to group tabs: ${tabIds.join(", ")}`);
+    this.logger.info(`Attempting to group tabs: ${tabIds.join(", ")}`);
     try {
       const groupId = await this.findOrCreateInactiveGroup(tabIds);
       if (groupId) {
         await chrome.tabs.group({ groupId, tabIds });
-        console.log(`Added tabs to 'Inactive Tabs' group with ID: ${groupId}`);
+        this.logger.info(
+          `Added tabs to "Inactive Tabs" group with ID: ${groupId}`
+        );
       } else {
-        console.log("No group created, tabs not grouped");
+        this.logger.info("No group created, tabs not grouped");
       }
       await this.saveState();
     } catch (error) {
-      console.error("Error grouping tabs:", error);
+      this.logger.error("Error grouping tabs:", error);
     }
   }
 
   private async ungroupTabs(tabIds: number[]): Promise<void> {
-    console.log(`Attempting to ungroup tabs: ${tabIds.join(", ")}`);
+    this.logger.info(`Attempting to ungroup tabs: ${tabIds.join(", ")}`);
     try {
       await chrome.tabs.ungroup(tabIds);
-      console.log(`Ungrouped tabs: ${tabIds.join(", ")}`);
+      this.logger.info(`Ungrouped tabs: ${tabIds.join(", ")}`);
 
       if (this.inactiveGroupId) {
         const groupTabs = await chrome.tabs.query({
           groupId: this.inactiveGroupId,
         });
-        console.log(`Tabs remaining in inactive group: ${groupTabs.length}`);
+        this.logger.info(
+          `Tabs remaining in inactive group: ${groupTabs.length}`
+        );
         if (groupTabs.length > 0) {
           await chrome.tabGroups.update(this.inactiveGroupId, {
             collapsed: true,
           });
-          console.log(`Collapsed inactive group`);
+          this.logger.info(`Collapsed inactive group`);
         } else {
           chrome.tabGroups.move(this.inactiveGroupId, { index: -1 });
           this.inactiveGroupId = null;
           this.inactiveGroupCreationTime = null;
-          console.log(
+          this.logger.info(
             `Removed empty inactive group and reset inactiveGroupId to null`
           );
         }
         await this.saveState();
       }
     } catch (error) {
-      console.error("Error ungrouping tabs:", error);
+      this.logger.error("Error ungrouping tabs:", error);
     }
   }
 
   private async checkAndUngroupTab(tabId: number): Promise<void> {
-    console.log(`Checking if tab ${tabId} needs to be ungrouped`);
+    this.logger.debug(`Checking if tab ${tabId} needs to be ungrouped`);
     try {
       const tab = await chrome.tabs.get(tabId);
       if (tab.groupId === this.inactiveGroupId) {
-        console.log(`Ungrouping tab ${tabId}`);
+        this.logger.info(`Ungrouping tab ${tabId}`);
         await this.ungroupTabs([tabId]);
       }
     } catch (error) {
-      console.error("Error checking and ungrouping tab:", error);
+      this.logger.error("Error checking and ungrouping tab:", error);
     }
   }
 
@@ -269,33 +288,25 @@ class TabFlowManager {
   }
 
   private async groupInactiveTabs(): Promise<void> {
-    console.log("Checking for inactive tabs");
+    this.logger.debug("Checking for inactive tabs");
 
     try {
       const tabs = await chrome.tabs.query({ currentWindow: true });
-      console.log(`Found ${tabs.length} tabs in current window`);
-      const activeTab = tabs.find((tab) => tab.active);
-      if (!activeTab?.id) {
-        console.error("No active tab found");
-        return;
-      }
-
-      console.log(`Active tab is ${activeTab.id}`);
-      this.updateLastInteractionTime(activeTab.id);
+      this.logger.info(`Found ${tabs.length} tabs in current window`);
 
       const inactiveTabs = tabs.filter(
-        (tab) => tab.id && tab.id !== activeTab.id && this.isTabInactive(tab.id)
+        (tab) => tab.id && this.isTabInactive(tab.id)
       );
 
-      console.log(`Found ${inactiveTabs.length} inactive tabs`);
+      this.logger.info(`Found ${inactiveTabs.length} inactive tabs`);
 
       if (inactiveTabs.length === 0) {
-        console.log("No inactive tabs to group");
+        this.logger.info("No inactive tabs to group");
         return;
       }
 
       const tabIdsToGroup = inactiveTabs.map((tab) => tab.id!);
-      console.log(`Tabs to group: ${tabIdsToGroup.join(", ")}`);
+      this.logger.info(`Tabs to group: ${tabIdsToGroup.join(", ")}`);
 
       if (this.deleteImmediately) {
         await this.deleteInactiveTabs(tabIdsToGroup);
@@ -303,7 +314,7 @@ class TabFlowManager {
         await this.groupTabs(tabIdsToGroup);
       }
     } catch (error) {
-      console.error("Error in groupInactiveTabs:", error);
+      this.logger.error("Error in groupInactiveTabs:", error);
     }
 
     this.scheduleNextCheck();
@@ -318,7 +329,7 @@ class TabFlowManager {
   }
 
   private async deleteInactiveTabs(tabIds: number[]): Promise<void> {
-    console.log(`Deleting inactive tabs: ${tabIds.join(", ")}`);
+    this.logger.info(`Deleting inactive tabs: ${tabIds.join(", ")}`);
     try {
       const tabsToDelete = await Promise.all(
         tabIds.map((tabId) => chrome.tabs.get(tabId))
@@ -327,10 +338,10 @@ class TabFlowManager {
         (tab): tab is chrome.tabs.Tab => !!tab
       );
       await chrome.tabs.remove(tabIds);
-      console.log(`Deleted inactive tabs: ${tabIds.join(", ")}`);
+      this.logger.info(`Deleted inactive tabs: ${tabIds.join(", ")}`);
       this.showDeleteNotification();
     } catch (error) {
-      console.error("Error deleting inactive tabs:", error);
+      this.logger.error("Error deleting inactive tabs:", error);
     }
   }
 
@@ -351,7 +362,7 @@ class TabFlowManager {
   }
 
   private async undoTabDeletion(): Promise<void> {
-    console.log("Undoing tab deletion");
+    this.logger.info("Undoing tab deletion");
     try {
       for (const tab of this.deletedTabs) {
         await chrome.tabs.create({
@@ -360,10 +371,10 @@ class TabFlowManager {
           index: tab.index,
         });
       }
-      console.log("Restored deleted tabs");
+      this.logger.info("Restored deleted tabs");
       this.deletedTabs = [];
     } catch (error) {
-      console.error("Error undoing tab deletion:", error);
+      this.logger.error("Error undoing tab deletion:", error);
     }
   }
 
@@ -374,34 +385,36 @@ class TabFlowManager {
       },
       (result) => {
         if (result) {
-          console.log("The extension has the necessary permissions.");
+          this.logger.info("The extension has the necessary permissions.");
         } else {
-          console.error("The extension is missing necessary permissions.");
+          this.logger.error("The extension is missing necessary permissions.");
         }
       }
     );
   }
 
   private async handleWindowClose(windowId: number): Promise<void> {
-    console.log(`Window ${windowId} closing, saving state`);
+    this.logger.info(`Window ${windowId} closing, saving state`);
     await Promise.all([this.saveState(), this.saveSession()]);
   }
 
   private async handleWindowOpen(window: chrome.windows.Window): Promise<void> {
-    console.log(`Window ${window.id} opened, restoring state`);
+    this.logger.info(`Window ${window.id} opened, restoring state`);
     await this.restoreState();
     await this.groupInactiveTabs();
   }
 
   private async deleteInactiveGroupIfExpired(): Promise<void> {
-    console.log("Checking if inactive group should be deleted");
+    this.logger.debug("Checking if inactive group should be deleted");
     if (this.inactiveGroupId && this.inactiveGroupCreationTime) {
       const currentTime = Date.now();
       if (
         currentTime - this.inactiveGroupCreationTime >=
         this.DELETE_INACTIVE_GROUP_INTERVAL
       ) {
-        console.log("Inactive group has expired. Deleting it and its tabs.");
+        this.logger.info(
+          "Inactive group has expired. Deleting it and its tabs."
+        );
         try {
           const groupTabs = await chrome.tabs.query({
             groupId: this.inactiveGroupId,
@@ -417,17 +430,20 @@ class TabFlowManager {
 
           this.inactiveGroupId = null;
           this.inactiveGroupCreationTime = null;
-          console.log("Inactive group and its tabs deleted successfully");
+          this.logger.info("Inactive group and its tabs deleted successfully");
           await this.saveState();
           this.showDeleteNotification();
         } catch (error) {
-          console.error("Error deleting inactive group and its tabs:", error);
+          this.logger.error(
+            "Error deleting inactive group and its tabs:",
+            error
+          );
         }
       } else {
-        console.log("Inactive group has not expired yet");
+        this.logger.debug("Inactive group has not expired yet");
       }
     } else {
-      console.log("No inactive group to delete");
+      this.logger.debug("No inactive group to delete");
     }
   }
 
@@ -442,7 +458,7 @@ class TabFlowManager {
         })),
       }));
       await chrome.storage.local.set({ savedSession: session });
-      console.log("Session saved:", session);
+      this.logger.info("Session saved:", session);
     }
   }
 
@@ -467,26 +483,26 @@ class TabFlowManager {
             }
           }
         }
-        console.log("Session restored");
+        this.logger.info("Session restored");
       }
     }
   }
 
   private updateSettings(settings: TabFlowSettings): void {
-    console.log("Updating settings:", settings);
+    this.logger.info("Updating settings:", settings);
     this.INACTIVITY_THRESHOLD = settings.inactiveTime * 60 * 1000;
     this.deleteImmediately = settings.action === "delete";
     this.deleteInactiveGroup = settings.deleteInactiveGroup;
     this.DELETE_INACTIVE_GROUP_INTERVAL = settings.groupDeleteTime * 60 * 1000;
     this.continueWhereLeftOff = settings.continueWhereLeftOff;
 
-    console.log(`New INACTIVITY_THRESHOLD: ${this.INACTIVITY_THRESHOLD}`);
-    console.log(`New deleteImmediately: ${this.deleteImmediately}`);
-    console.log(`New deleteInactiveGroup: ${this.deleteInactiveGroup}`);
-    console.log(
+    this.logger.info(`New INACTIVITY_THRESHOLD: ${this.INACTIVITY_THRESHOLD}`);
+    this.logger.info(`New deleteImmediately: ${this.deleteImmediately}`);
+    this.logger.info(`New deleteInactiveGroup: ${this.deleteInactiveGroup}`);
+    this.logger.info(
       `New DELETE_INACTIVE_GROUP_INTERVAL: ${this.DELETE_INACTIVE_GROUP_INTERVAL}`
     );
-    console.log(`New continueWhereLeftOff: ${this.continueWhereLeftOff}`);
+    this.logger.info(`New continueWhereLeftOff: ${this.continueWhereLeftOff}`);
 
     this.saveState();
 
@@ -528,13 +544,13 @@ class TabFlowManager {
             continueWhereLeftOff: this.continueWhereLeftOff,
           });
         } else if (message.type === "manualCleanup") {
-          console.log("Manual cleanup initiated");
+          this.logger.info("Manual cleanup initiated");
           this.groupInactiveTabs()
             .then(() => {
               sendResponse({ success: true });
             })
             .catch((error: Error) => {
-              console.error("Error during manual cleanup:", error);
+              this.logger.error("Error during manual cleanup:", error);
               sendResponse({ success: false, error: error.message });
             });
           return true;
@@ -596,7 +612,7 @@ class TabFlowManager {
             continueWhereLeftOff: false,
           };
           await chrome.storage.local.set(defaultSettings);
-          console.log("Default settings applied:", defaultSettings);
+          this.logger.info("Default settings applied:", defaultSettings);
           this.updateSettings(defaultSettings);
         } else {
           this.updateSettings({
