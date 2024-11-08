@@ -17,6 +17,11 @@ interface TabState {
   continueWhereLeftOff: boolean;
 }
 
+interface ScriptInjectionDetails {
+  target: { tabId: number };
+  func: () => void;
+}
+
 interface MyLogObj {
   level: string;
   message: string;
@@ -46,10 +51,45 @@ interface TabCounts {
   inactiveTabs: number;
   activeTabs: number;
 }
-interface RuntimeMessage {
+
+// Message Types
+interface BaseMessage {
   type: string;
-  settings?: TabFlowSettings;
 }
+
+interface UpdateSettingsMessage extends BaseMessage {
+  type: "updateSettings";
+  settings: TabFlowSettings;
+}
+
+interface GetSettingsMessage extends BaseMessage {
+  type: "getSettings";
+}
+
+interface ManualCleanupMessage extends BaseMessage {
+  type: "manualCleanup";
+}
+
+interface GetTabCountsMessage extends BaseMessage {
+  type: "getTabCounts";
+}
+
+interface TabActivityMessage extends BaseMessage {
+  type: "tabActivity";
+  timestamp: number;
+}
+
+type RuntimeMessage =
+  | UpdateSettingsMessage
+  | GetSettingsMessage
+  | ManualCleanupMessage
+  | GetTabCountsMessage
+  | TabActivityMessage;
+
+// interface RuntimeMessage {
+//   type: string;
+//   settings?: TabFlowSettings;
+// }
 
 interface SuccessResponse {
   success: boolean;
@@ -69,6 +109,7 @@ class TabFlowManager {
   private INACTIVITY_THRESHOLD: number = 60 * 60 * 1000;
   private DELETE_INACTIVE_GROUP_INTERVAL: number = 24 * 60 * 60 * 1000;
   private readonly UNDO_TIMEOUT: number = 10000;
+  private readonly ACTIVITY_CHECK_INTERVAL: number = 60 * 1000;
 
   private tabLastInteractionTime: Map<number, number> = new Map();
   private tabCreationTime: Map<number, number> = new Map();
@@ -78,8 +119,10 @@ class TabFlowManager {
   private deleteInactiveGroup: boolean = false;
   private deletedTabs: chrome.tabs.Tab[] = [];
   private continueWhereLeftOff: boolean = false;
+  // private readonly activityCheckInterval: Interval | undefined;
 
   private checkInactiveTabsTimeout?: Timeout;
+  private activityCheckInterval?: Interval;
   private deleteInactiveGroupInterval?: Interval;
   private logger: Logger<MyLogObj>;
 
@@ -91,6 +134,15 @@ class TabFlowManager {
   private setupLogger(): Logger<MyLogObj> {
     return new Logger<MyLogObj>({
       name: "TabFlowManager",
+    });
+  }
+
+  private setupActivityMessageListener(): void {
+    chrome.runtime.onMessage.addListener((message: RuntimeMessage, sender) => {
+      if (message.type === "tabActivity" && sender.tab?.id) {
+        this.updateLastInteractionTime(sender.tab.id);
+        this.saveState();
+      }
     });
   }
 
@@ -263,28 +315,94 @@ class TabFlowManager {
       await this.checkAndUngroupTab(activeInfo.tabId);
     });
 
-    chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-      if (changeInfo.status === "complete") {
-        console.log(`Tab ${tabId} updated`);
-        this.updateLastInteractionTime(tabId);
-        this.checkAndUngroupTab(tabId);
+    chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+      if (changeInfo.status === "complete" && tab.url?.startsWith("http")) {
+        await this.injectActivityTracker(tabId);
       }
     });
+    //     } catch (error) {
+    //       this.logger.error(
+    //         `Failed to inject activity tracker in tab ${tabId}:`,
+    //         error
+    //       );
+    //     }
+    //   }
+    // });
 
     chrome.tabs.onCreated.addListener((tab) => {
       if (tab.id) {
         console.log(`New tab created with ID ${tab.id}`);
-        this.tabCreationTime.set(tab.id, Date.now());
-        this.updateLastInteractionTime(tab.id);
+        const currentTime = Date.now();
+        this.tabCreationTime.set(tab.id, currentTime);
+        this.tabLastInteractionTime.set(tab.id, currentTime);
+        this.saveState();
       }
     });
 
+    // Clean up removed tabs
     chrome.tabs.onRemoved.addListener((tabId) => {
       console.log(`Tab ${tabId} removed`);
       this.tabLastInteractionTime.delete(tabId);
       this.tabCreationTime.delete(tabId);
       this.saveState();
     });
+  }
+  private async injectActivityTracker(tabId: number): Promise<void> {
+    const trackerFunction = (): void => {
+      let lastActivity = Date.now();
+      const ACTIVITY_THRESHOLD = 1000;
+
+      const updateActivity = (): void => {
+        const now = Date.now();
+        if (now - lastActivity > ACTIVITY_THRESHOLD) {
+          lastActivity = now;
+          chrome.runtime.sendMessage({ type: "tabActivity", timestamp: now });
+        }
+      };
+
+      window.addEventListener("mousemove", updateActivity);
+      window.addEventListener("keydown", updateActivity);
+      window.addEventListener("scroll", updateActivity);
+      window.addEventListener("click", updateActivity);
+    };
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        func: trackerFunction,
+      } as ScriptInjectionDetails);
+    } catch (error) {
+      this.logger.error(
+        `Failed to inject activity tracker in tab ${tabId}:`,
+        error
+      );
+    }
+  }
+
+  // private setupActivityMessageListener(): void {
+  //   chrome.runtime.onMessage.addListener((message: any, sender) => {
+  //     if (message.type === "tabActivity" && sender.tab?.id) {
+  //       this.updateLastInteractionTime(sender.tab.id);
+  //       this.saveState();
+  //     }
+  //   });
+  // }
+
+  private async checkTabActivity(): Promise<void> {
+    const tabs = await chrome.tabs.query({});
+    const currentTime = Date.now();
+
+    for (const tab of tabs) {
+      if (!tab.id) continue;
+
+      const lastInteraction = this.tabLastInteractionTime.get(tab.id) || 0;
+      const timeSinceInteraction = currentTime - lastInteraction;
+
+      if (timeSinceInteraction > this.INACTIVITY_THRESHOLD) {
+        if (tab.groupId !== this.inactiveGroupId) {
+          await this.groupInactiveTabs();
+        }
+      }
+    }
   }
 
   private async groupInactiveTabs(): Promise<void> {
@@ -490,6 +608,10 @@ class TabFlowManager {
 
   private updateSettings(settings: TabFlowSettings): void {
     this.logger.info("Updating settings:", settings);
+
+    // Clear existing intervals before updating settings
+    this.clearIntervals();
+
     this.INACTIVITY_THRESHOLD = settings.inactiveTime * 60 * 1000;
     this.deleteImmediately = settings.action === "delete";
     this.deleteInactiveGroup = settings.deleteInactiveGroup;
@@ -506,14 +628,18 @@ class TabFlowManager {
 
     this.saveState();
 
-    clearTimeout(this.checkInactiveTabsTimeout);
-    clearInterval(this.deleteInactiveGroupInterval);
-
+    // Update all tabs' last interaction time
     chrome.tabs.query({}, (tabs) => {
       tabs.forEach((tab) => {
         if (tab.id) this.updateLastInteractionTime(tab.id);
       });
     });
+
+    // Set up new intervals with updated settings
+    this.activityCheckInterval = setInterval(
+      () => this.checkTabActivity(),
+      this.ACTIVITY_CHECK_INTERVAL
+    );
 
     this.scheduleNextCheck();
 
@@ -532,41 +658,48 @@ class TabFlowManager {
         _sender: chrome.runtime.MessageSender,
         sendResponse: (response: MessageResponse) => void
       ) => {
-        if (message.type === "updateSettings" && message.settings) {
-          this.updateSettings(message.settings);
-          sendResponse({ success: true });
-        } else if (message.type === "getSettings") {
-          sendResponse({
-            action: this.deleteImmediately ? "delete" : "group",
-            inactiveTime: this.INACTIVITY_THRESHOLD / (60 * 1000),
-            deleteInactiveGroup: this.deleteInactiveGroup,
-            groupDeleteTime: this.DELETE_INACTIVE_GROUP_INTERVAL / (60 * 1000),
-            continueWhereLeftOff: this.continueWhereLeftOff,
-          });
-        } else if (message.type === "manualCleanup") {
-          this.logger.info("Manual cleanup initiated");
-          this.groupInactiveTabs()
-            .then(() => {
-              sendResponse({ success: true });
-            })
-            .catch((error: Error) => {
-              this.logger.error("Error during manual cleanup:", error);
-              sendResponse({ success: false, error: error.message });
+        switch (message.type) {
+          case "updateSettings":
+            this.updateSettings(message.settings);
+            sendResponse({ success: true });
+            break;
+
+          case "getSettings":
+            sendResponse({
+              action: this.deleteImmediately ? "delete" : "group",
+              inactiveTime: this.INACTIVITY_THRESHOLD / (60 * 1000),
+              deleteInactiveGroup: this.deleteInactiveGroup,
+              groupDeleteTime:
+                this.DELETE_INACTIVE_GROUP_INTERVAL / (60 * 1000),
+              continueWhereLeftOff: this.continueWhereLeftOff,
             });
-          return true;
-        } else if (message.type === "getTabCounts") {
-          chrome.tabs.query({}, (tabs) => {
-            const inactiveTabs = tabs.filter(
-              (tab) => tab.id && this.isTabInactive(tab.id)
-            );
-            const counts: TabCounts = {
-              totalTabs: tabs.length,
-              inactiveTabs: inactiveTabs.length,
-              activeTabs: tabs.length - inactiveTabs.length,
-            };
-            sendResponse(counts);
-          });
-          return true;
+            break;
+
+          case "manualCleanup":
+            this.logger.info("Manual cleanup initiated");
+            this.groupInactiveTabs()
+              .then(() => {
+                sendResponse({ success: true });
+              })
+              .catch((error: Error) => {
+                this.logger.error("Error during manual cleanup:", error);
+                sendResponse({ success: false, error: error.message });
+              });
+            return true;
+
+          case "getTabCounts":
+            chrome.tabs.query({}, (tabs) => {
+              const inactiveTabs = tabs.filter(
+                (tab) => tab.id && this.isTabInactive(tab.id)
+              );
+              const counts: TabCounts = {
+                totalTabs: tabs.length,
+                inactiveTabs: inactiveTabs.length,
+                activeTabs: tabs.length - inactiveTabs.length,
+              };
+              sendResponse(counts);
+            });
+            return true;
         }
         return true;
       }
@@ -627,10 +760,26 @@ class TabFlowManager {
     });
   }
 
+  private clearIntervals(): void {
+    if (this.activityCheckInterval) {
+      clearInterval(this.activityCheckInterval);
+      this.activityCheckInterval = undefined;
+    }
+    if (this.deleteInactiveGroupInterval) {
+      clearInterval(this.deleteInactiveGroupInterval);
+      this.deleteInactiveGroupInterval = undefined;
+    }
+    if (this.checkInactiveTabsTimeout) {
+      clearTimeout(this.checkInactiveTabsTimeout);
+      this.checkInactiveTabsTimeout = undefined;
+    }
+  }
+
   private async init(): Promise<void> {
+    await this.setupInstallListener();
     await this.restoreState();
 
-    // Load settings
+    // Load settings from storage
     const result = await chrome.storage.local.get([
       "action",
       "inactiveTime",
@@ -639,27 +788,52 @@ class TabFlowManager {
       "continueWhereLeftOff",
     ]);
 
-    if (
-      result.action &&
-      result.inactiveTime &&
-      result.deleteInactiveGroup !== undefined &&
-      result.groupDeleteTime &&
-      result.continueWhereLeftOff !== undefined
-    ) {
-      this.updateSettings({
-        action: result.action,
-        inactiveTime: result.inactiveTime,
-        deleteInactiveGroup: result.deleteInactiveGroup,
-        groupDeleteTime: result.groupDeleteTime,
-        continueWhereLeftOff: result.continueWhereLeftOff,
-      });
-    }
+    const settings: TabFlowSettings = {
+      action: result.action || "group",
+      inactiveTime: result.inactiveTime || 60,
+      deleteInactiveGroup: result.deleteInactiveGroup || false,
+      groupDeleteTime: result.groupDeleteTime || 180,
+      continueWhereLeftOff: result.continueWhereLeftOff || false,
+    };
 
+    this.updateSettings(settings);
+
+    // Initialize all current tabs with current timestamp
+    const tabs = await chrome.tabs.query({});
+    const currentTime = Date.now();
+    tabs.forEach((tab) => {
+      if (tab.id) {
+        this.tabCreationTime.set(tab.id, currentTime);
+        this.tabLastInteractionTime.set(tab.id, currentTime);
+      }
+    });
+
+    // if (
+    //   result.action &&
+    //   result.inactiveTime &&
+    //   result.deleteInactiveGroup !== undefined &&
+    //   result.groupDeleteTime &&
+    //   result.continueWhereLeftOff !== undefined
+    // ) {
+    //   this.updateSettings({
+    //     action: result.action,
+    //     inactiveTime: result.inactiveTime,
+    //     deleteInactiveGroup: result.deleteInactiveGroup,
+    //     groupDeleteTime: result.groupDeleteTime,
+    //     continueWhereLeftOff: result.continueWhereLeftOff,
+    //   });
+    // }
     this.setupTabListeners();
     this.setupMessageListeners();
     this.setupNotificationListeners();
-    this.setupInstallListener();
+    this.setupActivityMessageListener();
     this.checkPermissions();
+
+    // Set up regular activity checking
+    this.activityCheckInterval = setInterval(
+      () => this.checkTabActivity(),
+      this.ACTIVITY_CHECK_INTERVAL
+    );
 
     if (this.deleteInactiveGroup) {
       this.deleteInactiveGroupInterval = setInterval(
@@ -678,6 +852,8 @@ class TabFlowManager {
     if (this.continueWhereLeftOff) {
       await this.restoreSession();
     }
+
+    await this.saveState();
   }
 }
 

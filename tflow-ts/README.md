@@ -1,6 +1,6 @@
-# TabFlow
+# TabFlow (Chrome version)
 
-TabFlow is a Chrome extension designed to help you manage inactive tabs, reducing clutter and optimizing memory usage in your browser. With custom inactivity settings, intelligent grouping, and automatic cleanup, TabFlow ensures a streamlined and efficient browsing experience.
+TabFlow is an extension designed to help you manage inactive tabs, reducing clutter and optimizing memory usage in your browser. With custom inactivity settings, intelligent grouping, and automatic cleanup, TabFlow ensures a streamlined and efficient browsing experience.
 
 ## ✨ Features
 
@@ -41,7 +41,7 @@ To access TabFlow settings, click on the extension icon in the Chrome toolbar.
 
 If you'd like to contribute to TabFlow, please follow these steps:
 
-1. Fork the [TabFlow repository](https://github.com/yourusername/TabFlow) on GitHub.
+1. Fork the (https://github.com/Hybk/tflow-extension.git) on GitHub.
 2. Clone your forked repository and navigate to the project directory.
 3. Install dependencies using your preferred package manager (e.g., `npm install` or `yarn install`).
 4. Start the development server with `npm run dev` or `yarn run dev`.
@@ -53,19 +53,9 @@ If you'd like to contribute to TabFlow, please follow these steps:
 - **src/**: Contains core extension logic.
 - **background.js**: Manages tab inactivity tracking and automatic deletion.
 
-## 📢 Contributing
+---
 
-Contributions are welcome! If you'd like to improve TabFlow, please follow these steps:
-
-1. Fork the repository.
-2. Create a new branch (`git checkout -b feature/AmazingFeature`).
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`).
-4. Push to the branch (`git push origin feature/AmazingFeature`).
-5. Open a pull request.
-
-## 📄 License
-
-Distributed under the MIT License. See `LICENSE` for more information.
+I hope this information helps you with your TabFlow setup and usage. If you have any further questions, don't hesitate to ask. Happy browsing!
 
 ---
 

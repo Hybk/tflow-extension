@@ -1,91 +1,137 @@
+import { useState } from "react";
 import Logo from "/icon-48px.png";
 import {
   ChevronDownIcon,
   WrenchIcon,
   XMarkIcon,
 } from "@heroicons/react/24/solid";
-import { useState } from "react";
-import "../App.css";
-import Home from "./Home.tsx";
-import { Page } from "../enums.ts";
 
-function Onboarding() {
+// Reuse the same Card components for consistency
+const Card: React.FC<{ children: React.ReactNode; className?: string }> = ({
+  children,
+  className = "",
+}) => (
+  <div className={`rounded-lg border bg-white shadow-sm ${className}`}>
+    {children}
+  </div>
+);
+
+const CardHeader: React.FC<{
+  children: React.ReactNode;
+  className?: string;
+}> = ({ children, className = "" }) => (
+  <div className={`flex flex-col space-y-1.5 p-6 ${className}`}>{children}</div>
+);
+
+const CardTitle: React.FC<{
+  children: React.ReactNode;
+  className?: string;
+}> = ({ children, className = "" }) => (
+  <h3
+    className={`text-lg font-semibold leading-none tracking-tight ${className}`}
+  >
+    {children}
+  </h3>
+);
+
+const CardContent: React.FC<{
+  children: React.ReactNode;
+  className?: string;
+}> = ({ children, className = "" }) => (
+  <div className={`p-6 pt-0 ${className}`}>{children}</div>
+);
+
+interface OnboardingProps {
+  onComplete: () => void;
+}
+
+const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
   const [isClicked, setIsClicked] = useState(false);
-  const [page, setPage] = useState(Page.ONBOARDING);
 
   const handleStart = () => {
     setIsClicked(true);
-
     setTimeout(() => {
-      setPage(Page.HOME);
+      onComplete();
     }, 500);
   };
 
-  if (page === Page.HOME) {
-    return <Home />;
-  }
-
   return (
-    <div className="w-full bg-secondary">
-      <div
-        id="header"
-        className="flex justify-between bg-white h-16 px-6 items-center"
-      >
+    <div className="w-full h-auto bg-gray-50">
+      <header className="flex justify-between bg-white h-16 px-6 items-center shadow-sm">
         <div className="flex items-center space-x-3">
           <img src={Logo} alt="TabFlow Logo" className="w-6 h-6" />
-          <h1 className="text-xl font-bold">TabFlow</h1>
+          <h1 className="text-xl font-bold text-gray-900">TabFlow</h1>
         </div>
         <XMarkIcon
-          className="w-6 h-6 cursor-pointer"
+          className="w-6 h-6 cursor-pointer hover:text-gray-600 transition-colors"
           onClick={() => window.close()}
         />
-      </div>
-      <div id="body" className="p-8 flex flex-col space-y-7">
-        <div className="flex flex-col space-y-2">
-          <h1 className="text-2xl font-bold">
-            Welcome to TabFlow <span>👋</span>
-          </h1>
-          <p className="text-sm">
-            Boost productivity with TabFlow: effortlessly track, organize, and
-            clean up tabs for a seamless browsing experience.
-          </p>
-        </div>
-        <div className="border border-primary flex flex-col space-y-3 p-6 items-center rounded-lg">
-          <p className="font-bold self-start">How it works</p>
-          <ul className="list-disc space-y-3 w-9/12">
-            <li className="text-sm">
-              TabFlow starts working automatically once installed.
-            </li>
-            <li className="text-sm">
-              Adjust tab management preferences and notifications in the
-              Settings.
-            </li>
-            <li className="text-sm">
-              And Tada! Let TabFlow organize your tabs for a cleaner, more
-              efficient browsing experience.
-            </li>
-          </ul>
-        </div>
-        <div className="flex flex-col items-center justify-center space-y-3">
-          <p className="text-sm">Click the button below to get running</p>
-          <div className="flex flex-col items-center justify-center h-6 w-6 relative -top-2">
-            <ChevronDownIcon className="text-blue-500 animate-bounce-custom" />
-            <ChevronDownIcon className="text-blue-500 animate-bounce-custom" />
-          </div>
-          <button
-            onClick={handleStart}
-            className={`bg-primary text-white font-bold p-5 rounded-full w-52 transform transition-transform duration-500 ${
-              isClicked ? "scale-110" : ""
-            }`}
-          >
-            Get Started
-          </button>
-        </div>
-      </div>
-      <footer className="flex justify-between items-center p-3 bg-white">
-        <div className="flex items-center space-x-1">
-          <WrenchIcon className="w-4 h-4" />
-          <p className="text-xs font-semibold">
+      </header>
+
+      <main className="container mx-auto py-6 px-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-2xl">
+              Welcome to TabFlow <span className="ml-2">👋</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-gray-600 mb-6">
+              Boost productivity with TabFlow: effortlessly track, organize, and
+              clean up tabs for a seamless browsing experience.
+            </p>
+
+            <div className="bg-primary/5 border border-primary/20 rounded-lg p-6 mb-8">
+              <h3 className="font-semibold text-gray-900 mb-4">How it works</h3>
+              <ul className="space-y-3">
+                <li className="flex items-center space-x-3">
+                  <div className="w-2 h-2 rounded-full bg-primary"></div>
+                  <p className="text-sm text-gray-600">
+                    TabFlow starts working automatically once installed.
+                  </p>
+                </li>
+                <li className="flex items-center space-x-3">
+                  <div className="w-2 h-2 rounded-full bg-primary"></div>
+                  <p className="text-sm text-gray-600">
+                    Adjust tab management preferences and notifications in the
+                    Settings.
+                  </p>
+                </li>
+                <li className="flex items-center space-x-3">
+                  <div className="w-2 h-2 rounded-full bg-primary"></div>
+                  <p className="text-sm text-gray-600">
+                    And Tada! Let TabFlow organize your tabs for a cleaner, more
+                    efficient browsing experience.
+                  </p>
+                </li>
+              </ul>
+            </div>
+
+            <div className="flex flex-col items-center justify-center border-t border-gray-200 pt-6">
+              <p className="text-sm text-gray-600 mb-2">
+                Click the button below to get started
+              </p>
+              <div className="flex flex-col items-center justify-center h-6 w-6 mb-4">
+                <ChevronDownIcon className="text-primary animate-bounce" />
+                <ChevronDownIcon className="text-primary animate-bounce delay-75" />
+              </div>
+              <button
+                onClick={handleStart}
+                className={`bg-primary text-white font-medium rounded-lg px-8 py-3 hover:bg-primary/90 transition-all duration-300 ${
+                  isClicked ? "scale-105" : ""
+                }`}
+              >
+                Get Started
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+      </main>
+
+      <footer className="fixed bottom-0 w-full flex justify-between items-center p-3 bg-white border-t border-gray-200">
+        <div className="flex items-center space-x-2">
+          <WrenchIcon className="w-4 h-4 text-gray-500" />
+          <p className="text-xs font-semibold text-gray-600">
             Pro Tip: Pin the extension for easy access to control
           </p>
         </div>
@@ -93,13 +139,13 @@ function Onboarding() {
           href="https://github.com/Hybk/TabFlow-Extention"
           target="_blank"
           rel="noopener noreferrer"
-          className="text-black underline text-xs"
+          className="text-primary hover:text-primary/90 text-xs underline transition-colors"
         >
           Github
         </a>
       </footer>
     </div>
   );
-}
+};
 
 export default Onboarding;

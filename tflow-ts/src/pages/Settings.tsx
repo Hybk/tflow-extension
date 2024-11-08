@@ -8,12 +8,16 @@ import {
 
 import { TabAction } from "../enums";
 import Logo from "/icon-48px.png";
-import Home from "./Home";
+// import Home from "./Home";
 
-enum Page {
-  HOME = "HOME",
-  SETTINGS = "SETTINGS",
-}
+// enum Page {
+//   HOME = "HOME",
+//   SETTINGS = "SETTINGS",
+// }
+
+// interface SettingsProps {
+//   onBack: () => void;
+// }
 
 // Card Components
 const Card: React.FC<{ children: React.ReactNode; className?: string }> = ({
@@ -72,10 +76,11 @@ const DEFAULT_SETTINGS: TabFlowSettings = {
   continueWhereLeftOff: true,
 };
 
-const Setting: React.FC = () => {
+const Settings: React.FC<{
+  onBack: () => void;
+}> = ({ onBack }) => {
   const [settings, setSettings] = useState<TabFlowSettings>(DEFAULT_SETTINGS);
-  const [isSaving, setIsSaving] = useState<boolean>(false);
-  const [page, setPage] = useState<Page>(Page.SETTINGS);
+  // const [page, setPage] = useState<Page>(Page.SETTINGS);
 
   // Load settings on component mount
   useEffect(() => {
@@ -98,40 +103,36 @@ const Setting: React.FC = () => {
 
     loadSettings();
   }, []);
-  // Save settings with debounce
-  useEffect(() => {
-    const saveSettings = async () => {
-      try {
-        const message: RuntimeMessage = {
-          type: "updateSettings",
-          settings: settings,
-        };
-        await chrome.runtime.sendMessage(message);
-        console.log("Settings saved successfully");
-      } catch (error) {
-        console.error("Error saving settings:", error);
-      } finally {
-        setIsSaving(false);
-      }
-    };
-
-    if (isSaving) {
-      saveSettings();
-    }
-  }, [settings, isSaving]);
 
   const updateSettings = (updates: Partial<TabFlowSettings>) => {
     setSettings((prev) => ({ ...prev, ...updates }));
-    setIsSaving(true);
   };
 
-  const handleSettingsClick = (): void => {
-    setPage(Page.HOME);
+  // Save settings with debounce
+  const saveSettings = async () => {
+    try {
+      const message: RuntimeMessage = {
+        type: "updateSettings",
+        settings: settings,
+      };
+      await chrome.runtime.sendMessage(message);
+      console.log("Settings saved successfully");
+    } catch (error) {
+      console.error("Error saving settings:", error);
+    }
   };
 
-  if (page === Page.HOME) {
-    return <Home />;
-  }
+  const resetSettings = () => {
+    setSettings(DEFAULT_SETTINGS);
+  };
+
+  // const handleSettingsClick = (): void => {
+  //   setPage(Page.HOME);
+  // };
+
+  // if (page === Page.HOME) {
+  //   return <Home />;
+  // }
 
   return (
     <div className="w-full h-[auto] bg-gray-50">
@@ -282,6 +283,20 @@ const Setting: React.FC = () => {
                 </span>
               </label>
             </div>
+            <div className="flex justify-end space-x-4 pt-4 border-t border-gray-200">
+              <button
+                onClick={resetSettings}
+                className="px-4 py-2 bg-gray-200 rounded text-gray-800 hover:bg-gray-300 transition"
+              >
+                Reset to Default
+              </button>
+              <button
+                onClick={saveSettings}
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
+              >
+                Save Settings
+              </button>
+            </div>
           </CardContent>
         </Card>
       </main>
@@ -290,7 +305,7 @@ const Setting: React.FC = () => {
         <div
           id="settings"
           className="w-1/2 h-full flex items-center justify-center border-t border-b border-primary bg-white cursor-pointer hover:bg-gray-50 transition-colors duration-500"
-          onClick={handleSettingsClick}
+          onClick={onBack}
         >
           <HomeIcon className="w-6 h-6 text-gray-600" />
         </div>
@@ -319,4 +334,4 @@ const Setting: React.FC = () => {
   );
 };
 
-export default Setting;
+export default Settings;
